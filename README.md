@@ -8,7 +8,7 @@ We adapt a pretrained DINOv2 encoder (with LoRA) to produce satellite-tile embed
 
 ```
 notebooks/        Jupyter notebooks, numbered in the order they should be run
-requirements.txt  Python dependencies
+pyproject.toml    Python dependencies
 data              Symlink to your local SeasoNet copy (git-ignored)
 ```
 
@@ -17,9 +17,7 @@ data              Symlink to your local SeasoNet copy (git-ignored)
 Requires [uv](https://docs.astral.sh/uv/).
 
 ```bash
-uv venv --python 3.12 .venv
-source .venv/bin/activate
-uv pip install -r requirements.txt
+uv sync
 ```
 
 ## Data

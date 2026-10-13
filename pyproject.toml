@@ -1,0 +1,16 @@
+[project]
+name = "season-agnostic-geolocation-embeddings"
+version = "0.1.0"
+description = "Season-agnostic satellite geolocation embeddings for UAV localization"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "imagecodecs",
+    "ipykernel",
+    "jupyter",
+    "matplotlib",
+    "numpy",
+    "pandas",
+    "scipy",
+    "tifffile",
+]
