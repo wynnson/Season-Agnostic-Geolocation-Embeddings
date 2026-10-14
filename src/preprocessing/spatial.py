@@ -4,18 +4,18 @@ import numpy as np
 EARTH_RADIUS_M          = 6_371_000
 
 
-def lat_lon_to_unit_sphere(lat, lon):
+def lon_lat_to_unit_sphere(lon, lat):
     lat = np.deg2rad(lat)
     lon = np.deg2rad(lon)
 
-    return np.c_[
+    return np.column_stack((
         np.cos(lat) * np.cos(lon),
         np.cos(lat) * np.sin(lon),
         np.sin(lat),
-    ]
+    ))
 
 
-def haversine_distance_m(lat1, lon1, lat2, lon2):
+def haversine_distance_m(lon1, lat1, lon2, lat2):
     lat1 = np.deg2rad(lat1)
     lon1 = np.deg2rad(lon1)
     lat2 = np.deg2rad(lat2)
