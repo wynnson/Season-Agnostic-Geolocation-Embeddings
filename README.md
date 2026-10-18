@@ -31,7 +31,7 @@ We use the [SeasoNet](https://zenodo.org/records/6979994) dataset (Sentinel-2 ti
 | `snow.zip` | 14.1 GB |
 | `summer.zip` | 62.5 GB |
 
-Unzipped, the data takes about 87 GB and about 5.8 million files. Drag it in /data folder or keep it outside the repo and link it in:
+Unzipped, the data takes about 87 GB and about 5.8 million files. Keep it outside the repo and link it in. A symlink is instant, while copying 5.8 million files into the repo is very slow:
 
 ```bash
 ln -s /path/to/seasonet data
