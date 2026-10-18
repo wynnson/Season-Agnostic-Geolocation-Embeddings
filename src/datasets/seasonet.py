@@ -7,8 +7,8 @@ from torch.utils.data import Dataset
 from typing import NamedTuple
 from pathlib import Path
 
-from preprocessing.normalization import normalize_rgb
-from preprocessing.schema import Pairs
+from src.preprocessing.normalization import normalize_rgb
+from src.preprocessing.schema import Pairs
 
 
 class SeasoNetData(NamedTuple):

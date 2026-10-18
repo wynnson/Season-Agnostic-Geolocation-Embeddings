@@ -14,13 +14,10 @@ class Meta:
 
     CLOUDS                  = "Clouds"
     SNOW_COVER              = "Snow"
-    MAX_CLOUD_COVER         = 50  # percent
 
 
 class Pairs:
     LOC_ID                  = "loc_id"
-    INDEX_SUMMER            = "Index_summer"
-    INDEX_SNOW              = "Index_snow"
     PATH_SUMMER             = "Path_summer"
     PATH_SNOW               = "Path_snow"
     LONGITUDE_SUMMER        = "Longitude_summer"

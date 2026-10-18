@@ -1,19 +1,24 @@
 from pathlib import Path
+import sys
+
+REPO_DIR = Path(__file__).resolve().parents[1]
+if str(REPO_DIR) not in sys.path:
+    sys.path.insert(0, str(REPO_DIR))
+
+import pandas as pd
+
 from omegaconf import OmegaConf
 from torch.utils.data import DataLoader
 
-from preprocessing.data_cleaner import load_pairs, attach_splits
 from src.datasets.seasonet import SeasoNetDataset
-# from training.trainer import Trainer
 
 
 def main():
-    TRAIN_CFG_PATH = "/config/train_config.yaml"
-    cfg = OmegaConf.load(TRAIN_CFG_PATH)
-    
-    data_dir = Path(cfg.data.data_dir)
-    pairs = load_pairs(data_dir)
-    pairs = attach_splits(pairs, data_dir)
+    train_cfg_path = REPO_DIR / "config/train_config.yaml"
+    cfg = OmegaConf.load(train_cfg_path)
+
+    data_dir = (REPO_DIR / cfg.data.data_dir).resolve()
+    pairs = pd.read_parquet(REPO_DIR / cfg.data.pairs_path)
 
     train_dataset = SeasoNetDataset(
         pairs=pairs,
@@ -33,16 +38,17 @@ def main():
         train_dataset,
         batch_size=cfg.training.batch_size,
         shuffle=True,
+        num_workers=cfg.data.num_workers,
     )
 
     val_loader = DataLoader(
         val_dataset,
         batch_size=cfg.training.batch_size,
         shuffle=False,
+        num_workers=cfg.data.num_workers,
     )
 
-    # TODO: load model stuff & init model
-    # model = model()
+    # TODO: initialize a trainable model, optimizer, loss, and trainer.
 
 if __name__ == "__main__":
     main()

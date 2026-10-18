@@ -7,6 +7,10 @@ We train foundation models to represent the same place (aerial view), different 
 ```
 notebooks/              Jupyter notebooks, numbered in the order they should be run
 src/preprocessing/      Reusable data cleaning, normalization, and spatial helpers
+src/models/             Model loading and image-to-embedding helpers
+src/training/           Retrieval metrics and model-agnostic evaluation
+scripts/                Training and evaluation entry points
+config/                 Training, evaluation, and preprocessing configuration
 artifacts/              Generated preprocessing outputs (git-ignored)
 pyproject.toml          Python dependencies
 data                    Symlink to your local SeasoNet copy (git-ignored)
@@ -18,6 +22,20 @@ Requires [uv](https://docs.astral.sh/uv/).
 
 ```bash
 uv sync
+```
+
+## Scripts
+
+Evaluate frozen DINOv2 on the geographic validation split:
+
+```bash
+uv run python scripts/evaluate.py
+```
+
+Start the training entry point:
+
+```bash
+uv run python scripts/train.py
 ```
 
 ## Data

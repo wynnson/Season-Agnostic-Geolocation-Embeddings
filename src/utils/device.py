@@ -9,4 +9,5 @@ def get_device() -> torch.device:
     else:
         device = "cpu"
 
+    print(f"Using: {device}")
     return torch.device(device)

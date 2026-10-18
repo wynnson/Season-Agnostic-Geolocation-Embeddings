@@ -9,7 +9,7 @@ from src.preprocessing.schema import Pairs
 from src.preprocessing.spatial import EARTH_RADIUS_M, lon_lat_to_unit_sphere
 
 
-SPLIT_FRACTIONS         = {"train": 0.7, "val": 0.1, "test": 0.2}
+SPLIT_FRACTIONS         = {"train": 0.75, "val": 0.1, "test": 0.15}
 SPLIT_PRIORITY          = {"train": 0, "val": 1, "test": 2}
 REFERENCE_LATITUDE      = 51.0  # centre of Germany; sets block width in degrees
 METERS_PER_DEGREE       = np.deg2rad(1) * EARTH_RADIUS_M

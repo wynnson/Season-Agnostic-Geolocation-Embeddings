@@ -16,4 +16,5 @@ dependencies = [
     "tifffile",
     "torch",
     "omegaconf",
+    "torchvision",
 ]
