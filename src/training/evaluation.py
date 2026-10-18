@@ -4,7 +4,7 @@ from collections.abc import Callable
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 
-from src.training.schema import Metrics
+from src.training.schema import ValidationMetrics
 
 
 @torch.inference_mode()
@@ -78,18 +78,18 @@ def evaluate_cross_season_retrieval(
     embed_fn: Callable[[torch.Tensor], torch.Tensor],
     chunk_size: int,
     log_every: int,
-) -> dict[str, dict[str, float]]:
+) -> ValidationMetrics:
     summer_embeddings, snow_embeddings = build_embeddings_list(embed_fn, data_loader, log_every)
 
-    return {
-        Metrics.SUMMER_TO_SNOW: retrieval_recall_at_k(
+    return ValidationMetrics(
+        summer_to_snow=retrieval_recall_at_k(
             queries=summer_embeddings,
             gallery=snow_embeddings,
             chunk_size=chunk_size,
         ),
-        Metrics.SNOW_TO_SUMMER: retrieval_recall_at_k(
+        snow_to_summer=retrieval_recall_at_k(
             queries=snow_embeddings,
             gallery=summer_embeddings,
             chunk_size=chunk_size,
         ),
-    }
+    )

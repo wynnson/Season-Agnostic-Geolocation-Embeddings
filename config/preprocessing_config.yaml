@@ -1,13 +1,23 @@
 cleaning:
   max_cloud_cover: 50
 
+output:
+  artifacts_dir: "artifacts"
+  manifest_filename: "preprocessing_manifest.yaml"
+
 geographic_split:
   block_size_m: 10000
   buffer_m: 2000
+  reference_latitude: 51.0
+  seed: 42
   fractions:
     train: 0.7
     val: 0.1
     test: 0.2
+  priority:
+    train: 0
+    val: 1
+    test: 2
 
 hard_negatives:
   k: 50

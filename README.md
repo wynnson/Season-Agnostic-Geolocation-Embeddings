@@ -26,16 +26,34 @@ uv sync
 
 ## Scripts
 
+Create geographic split, hard-negative, and manifest artifacts:
+
+```bash
+uv run python scripts/preprocess.py
+```
+
 Evaluate frozen DINOv2 on the geographic validation split:
 
 ```bash
 uv run python scripts/evaluate.py
 ```
 
-Start the training entry point:
+Train the model:
 
 ```bash
 uv run python scripts/train.py
+```
+
+Resume from a checkpoint:
+
+```bash
+uv run python scripts/train.py --resume artifacts/checkpoints/last.pt
+```
+
+Checkpoints are saved under `artifacts/checkpoints`. View training metrics with:
+
+```bash
+uv run tensorboard --logdir artifacts/tensorboard
 ```
 
 ## Data
