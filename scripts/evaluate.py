@@ -12,9 +12,29 @@ from omegaconf import OmegaConf
 from torch.utils.data import DataLoader
 
 from src.datasets.seasonet import SeasoNetDataset
-from src.models.dinov2 import embed_dinov2_images, load_frozen_dinov2
+from src.models.dinov2 import embed_dinov2_images, load_dinov2, load_frozen_dinov2
 from src.training.evaluation import evaluate_cross_season_retrieval
 from src.utils.device import get_device
+
+
+def load_trained_model(checkpoint_path: Path, device: torch.device):
+    if not checkpoint_path.is_file():
+        raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    train_cfg = OmegaConf.create(checkpoint["config"])
+    model = load_dinov2(
+        model_name=train_cfg.model.backbone,
+        repository=train_cfg.model.repository,
+        tuning=train_cfg.model.tuning,
+        embedding_dim=train_cfg.model.projection_head.embedding_dim,
+        hidden_dim=train_cfg.model.projection_head.hidden_dim,
+        projection_dropout=train_cfg.model.projection_head.dropout,
+        season_classes=train_cfg.model.season_classifier.num_classes,
+    ).to(device)
+    model.load_state_dict(checkpoint["model_state_dict"])
+    model.eval()
+    return model, train_cfg.model
 
 
 def main():
@@ -41,23 +61,31 @@ def main():
 
     device = get_device()
 
-    if cfg.evaluation.trained:
-        raise NotImplementedError("Trained checkpoint evaluation is not implemented yet")
-
-    model = load_frozen_dinov2(
-        cfg.model.backbone,
-        cfg.model.repository,
-    ).to(device)
-    
-    model.eval()
+    match cfg.evaluation.mode:
+        case "trained":
+            checkpoint_path = REPO_DIR / cfg.evaluation.checkpoint_path
+            model, model_cfg = load_trained_model(checkpoint_path, device)
+            model_label = f"Trained DINOv2 ({checkpoint_path.name})"
+        case "frozen":
+            model = load_frozen_dinov2(
+                cfg.model.backbone,
+                cfg.model.repository,
+            ).to(device)
+            model.eval()
+            model_cfg = cfg.model
+            model_label = "Frozen DINOv2"
+        case "lora":
+            raise NotImplementedError("LoRA evaluation is not implemented yet")
+        case mode:
+            raise ValueError(f"Unsupported evaluation mode: {mode}")
 
     def embed_fn(images: torch.Tensor) -> torch.Tensor:
         return embed_dinov2_images(
             model,
             images.to(device),
-            cfg.model.image_size,
-            tuple(cfg.model.normalization.mean),
-            tuple(cfg.model.normalization.std),
+            model_cfg.image_size,
+            tuple(model_cfg.normalization.mean),
+            tuple(model_cfg.normalization.std),
         )
 
     metrics = evaluate_cross_season_retrieval(
@@ -67,7 +95,7 @@ def main():
         log_every=cfg.logging.log_every,
     )
 
-    print(f"DINOv2 evaluation on geographic validation split ({len(val_dataset):,} pairs)")
+    print(f"{model_label} evaluation on geographic validation split ({len(val_dataset):,} pairs)")
     print("Summer -> Snow:", metrics.summer_to_snow)
     print("Snow -> Summer:", metrics.snow_to_summer)
 

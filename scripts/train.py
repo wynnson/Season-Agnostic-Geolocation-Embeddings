@@ -203,6 +203,7 @@ def main():
     )
 
     checkpoint_dir = REPO_DIR / cfg.checkpoint.output_dir
+    checkpoint_prefix = checkpoint_dir / cfg.checkpoint.run_name
     if cfg.checkpoint.save_every < 1:
         raise ValueError("checkpoint.save_every must be at least 1")
 
@@ -256,7 +257,9 @@ def main():
 
         if epoch % cfg.checkpoint.save_every == 0:
             save_checkpoint(
-                checkpoint_dir / f"epoch_{epoch:03d}.pt",
+                checkpoint_prefix.with_name(
+                    f"{checkpoint_prefix.name}_epoch_{epoch:03d}.pt"
+                ),
                 model,
                 optimizer,
                 epoch,
@@ -268,7 +271,7 @@ def main():
             )
         if is_best:
             save_checkpoint(
-                checkpoint_dir / "best.pt",
+                checkpoint_prefix.with_name(f"{checkpoint_prefix.name}_best.pt"),
                 model,
                 optimizer,
                 epoch,
@@ -278,6 +281,17 @@ def main():
                 best_epoch,
                 cfg,
             )
+        save_checkpoint(
+            checkpoint_prefix.with_name(f"{checkpoint_prefix.name}_last.pt"),
+            model,
+            optimizer,
+            epoch,
+            train_metrics,
+            validation_metrics,
+            best_score,
+            best_epoch,
+            cfg,
+        )
 
     try:
         history = trainer.train(
@@ -290,19 +304,6 @@ def main():
             on_epoch_end=on_epoch_end,
         )
 
-        final_train_metrics = history.train[-1]
-        final_validation_metrics = history.validation[-1]
-        save_checkpoint(
-            checkpoint_dir / "last.pt",
-            model,
-            optimizer,
-            cfg.training.epochs,
-            final_train_metrics,
-            final_validation_metrics,
-            history.best_score,
-            history.best_epoch,
-            cfg,
-        )
         print(f"Best epoch: {history.best_epoch}", flush=True)
     finally:
         writer.close()

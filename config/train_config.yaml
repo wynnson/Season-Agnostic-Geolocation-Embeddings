@@ -45,6 +45,7 @@ optimizer:
 # Checkpointing
 checkpoint:
   output_dir: "artifacts/checkpoints"
+  run_name: "dinov2_vits14_geo_grl"
   save_every: 5
 
 # Logging

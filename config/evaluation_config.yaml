@@ -13,7 +13,8 @@ model:
     std: [0.229, 0.224, 0.225]
 
 evaluation:
-  trained: false
+  mode: "trained"  # frozen, trained, lora
+  checkpoint_path: "artifacts/checkpoints/dinov2_vits14_geo_grl_best.pt"
   batch_size: 32
   retrieval_chunk_size: 512
 

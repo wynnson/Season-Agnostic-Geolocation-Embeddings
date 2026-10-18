@@ -32,11 +32,13 @@ Create geographic split, hard-negative, and manifest artifacts:
 uv run python scripts/preprocess.py
 ```
 
-Evaluate frozen DINOv2 on the geographic validation split:
+Evaluate the configured trained checkpoint on the geographic validation split:
 
 ```bash
 uv run python scripts/evaluate.py
 ```
+
+Set `evaluation.mode: "frozen"` in `config/evaluation_config.yaml` to evaluate frozen DINOv2 instead.
 
 Train the model:
 
@@ -47,10 +49,10 @@ uv run python scripts/train.py
 Resume from a checkpoint:
 
 ```bash
-uv run python scripts/train.py --resume artifacts/checkpoints/last.pt
+uv run python scripts/train.py --resume artifacts/checkpoints/dinov2_vits14_geo_grl_last.pt
 ```
 
-Checkpoints are saved under `artifacts/checkpoints`. View training metrics with:
+Checkpoints are saved as `<run_name>_best.pt`, `<run_name>_last.pt`, and periodic `<run_name>_epoch_XXX.pt` files under `artifacts/checkpoints`. Set `checkpoint.run_name` in `config/train_config.yaml` for each independent run. View training metrics with:
 
 ```bash
 uv run tensorboard --logdir artifacts/tensorboard
