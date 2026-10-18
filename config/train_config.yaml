@@ -1,0 +1,38 @@
+seed: 42
+
+# Dataset
+data:
+  data_dir: "data/SeasoNet"
+  image_size: 224
+  num_workers: 4
+
+# Model
+model:
+  backbone: "facebook/dinov2-small"  # ViT-S/14
+  embedding_dim: 256
+  freeze_backbone: true
+
+  projection_head:
+    hidden_dim: 384
+    dropout: 0.0
+
+# Training
+training:
+  epochs: 20
+  batch_size: 32
+  learning_rate: 0.0001
+  weight_decay: 0.01
+  temperature: 0.07
+
+# Optimizer
+optimizer:
+  name: "adamw"
+
+# Checkpointing
+checkpoint:
+  output_dir: "artifacts/checkpoints"
+  save_every: 5
+
+# Logging
+logging:
+  log_every: 10

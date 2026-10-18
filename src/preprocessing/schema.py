@@ -28,8 +28,6 @@ class Pairs:
     CLOUDS_SUMMER           = "Clouds_summer"
     CLOUDS_SNOW             = "Clouds_snow"
     SNOW_COVER_SNOW         = "Snow_snow"
-    LATITUDE_SUMMER         = "Latitude_summer"
-    LONGITUDE_SUMMER        = "Longitude_summer"
     SPLIT                   = "split"
 
 
