@@ -46,11 +46,25 @@ Train the model:
 uv run python scripts/train.py
 ```
 
-Resume from a checkpoint:
+Resume interrupted raw-image training from its last checkpoint:
 
 ```bash
-uv run python scripts/train.py --resume artifacts/checkpoints/dinov2_vits14_geo_grl_last.pt
+uv run python scripts/train.py --resume artifacts/checkpoints/<run_name>_last.pt
 ```
+
+Train heads on cached frozen-DINOv2 features:
+
+```bash
+uv run python scripts/train_cached.py
+```
+
+Resume interrupted cached-feature training from its last checkpoint:
+
+```bash
+uv run python scripts/train_cached.py --resume artifacts/checkpoints/<run_name>_last.pt
+```
+
+Use the same model architecture and scheduler configuration when resuming. To extend a completed cosine-scheduled run, start a new fine-tuning phase with an explicitly chosen scheduler rather than resuming its final checkpoint.
 
 Checkpoints are saved as `<run_name>_best.pt` and `<run_name>_last.pt` under `artifacts/checkpoints`. Set `checkpoint.run_name` in `config/train_config.yaml` for each independent run. View training metrics with:
 

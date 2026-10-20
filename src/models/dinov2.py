@@ -18,6 +18,46 @@ def gradient_reverse(x: torch.Tensor, scale: float) -> torch.Tensor:
     return _GradientReverse.apply(x, scale)
 
 
+class ResidualProjectionHead(nn.Module):
+    def __init__(self, input_dim: int, hidden_dim: int, output_dim: int, dropout: float):
+        super().__init__()
+        if output_dim != input_dim:
+            raise ValueError(
+                "Residual projection heads require embedding_dim to match the backbone embedding dimension"
+            )
+        self.normalization = nn.LayerNorm(input_dim)
+        self.mlp = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, output_dim),
+        )
+
+    def forward(self, features: torch.Tensor) -> torch.Tensor:
+        return features + self.mlp(self.normalization(features))
+
+
+def build_projection_head(
+    input_dim: int,
+    hidden_dim: int,
+    embedding_dim: int,
+    dropout: float,
+    architecture: str,
+) -> nn.Module:
+    match architecture:
+        case "mlp":
+            return nn.Sequential(
+                nn.Linear(input_dim, hidden_dim),
+                nn.GELU(),
+                nn.Dropout(dropout),
+                nn.Linear(hidden_dim, embedding_dim),
+            )
+        case "residual":
+            return ResidualProjectionHead(input_dim, hidden_dim, embedding_dim, dropout)
+        case _:
+            raise ValueError(f"Unsupported projection head architecture: {architecture}")
+
+
 class SeasonAgnosticDINOv2(nn.Module):
     def __init__(
         self,
@@ -26,6 +66,7 @@ class SeasonAgnosticDINOv2(nn.Module):
         hidden_dim: int,
         projection_dropout: float,
         season_classes: int,
+        projection_architecture: str = "mlp",
     ):
         super().__init__()
         self.backbone = backbone
@@ -33,11 +74,12 @@ class SeasonAgnosticDINOv2(nn.Module):
         if not isinstance(backbone_dim, int):
             raise ValueError("DINOv2 backbone must expose an integer embed_dim")
 
-        self.projection_head = nn.Sequential(
-            nn.Linear(backbone_dim, hidden_dim),
-            nn.GELU(),
-            nn.Dropout(projection_dropout),
-            nn.Linear(hidden_dim, embedding_dim),
+        self.projection_head = build_projection_head(
+            backbone_dim,
+            hidden_dim,
+            embedding_dim,
+            projection_dropout,
+            projection_architecture,
         )
         self.season_classifier = nn.Linear(embedding_dim, season_classes)
         self.backbone_frozen = False
@@ -78,6 +120,7 @@ def load_dinov2(
     hidden_dim: int,
     projection_dropout: float,
     season_classes: int,
+    projection_architecture: str = "mlp",
 ) -> SeasonAgnosticDINOv2:
     backbone = torch.hub.load(repository, model_name)
     model = SeasonAgnosticDINOv2(
@@ -86,6 +129,7 @@ def load_dinov2(
         hidden_dim=hidden_dim,
         projection_dropout=projection_dropout,
         season_classes=season_classes,
+        projection_architecture=projection_architecture,
     )
 
     if tuning == "frozen":

@@ -46,7 +46,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--resume",
         type=Path,
-        help="Checkpoint path to resume from.",
+        help="Last checkpoint path from an interrupted run.",
     )
     return parser.parse_args()
 
@@ -118,6 +118,7 @@ def main():
         hidden_dim=cfg.model.projection_head.hidden_dim,
         projection_dropout=cfg.model.projection_head.dropout,
         season_classes=cfg.model.season_classifier.num_classes,
+        projection_architecture=cfg.model.projection_head.architecture,
     ).to(device)
 
     if cfg.optimizer.name != "adamw":

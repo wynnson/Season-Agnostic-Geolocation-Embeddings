@@ -32,6 +32,7 @@ def load_trained_model(checkpoint_path: Path, device: torch.device):
         hidden_dim=train_cfg.model.projection_head.hidden_dim,
         projection_dropout=train_cfg.model.projection_head.dropout,
         season_classes=train_cfg.model.season_classifier.num_classes,
+        projection_architecture=train_cfg.model.projection_head.get("architecture", "mlp"),
     ).to(device)
     model.load_state_dict(checkpoint.model_state_dict)
     model.eval()

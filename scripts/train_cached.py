@@ -18,10 +18,11 @@ import torch
 from omegaconf import OmegaConf
 from torch.nn import functional as F
 from torch.utils.tensorboard import SummaryWriter
+from tqdm.auto import tqdm
 
 from src.datasets.seasonet import SeasoNetDataset
 from src.models.dinov2 import load_dinov2
-from src.training.checkpoint import save_checkpoint
+from src.training.checkpoint import load_checkpoint, restore_training_state, save_checkpoint
 from src.preprocessing.schema import Pairs
 from src.training.evaluation import retrieval_recall_at_k
 from src.training.feature_cache import (
@@ -57,6 +58,7 @@ from src.utils.device import get_device
 
 def parse_args() -> tuple[argparse.Namespace, list[str]]:
     parser = argparse.ArgumentParser(description="Train heads on cached frozen DINOv2 features.")
+    parser.add_argument("--resume", type=Path, help="Checkpoint path to resume from.")
     return parser.parse_known_args()
 
 
@@ -105,7 +107,8 @@ def train_one_epoch(
     num_batches = len(order) // batch_size  # drop_last, as in scripts/train.py
 
     totals = torch.zeros(6, device=device)
-    for b in range(num_batches):
+    progress = tqdm(range(num_batches), desc="Cached training", unit="batch", leave=False)
+    for b in progress:
         idx = order[b * batch_size:(b + 1) * batch_size]
         negatives = negative_index[idx]
 
@@ -143,6 +146,10 @@ def train_one_epoch(
             summer_classifier_accuracy,
             snow_classifier_accuracy,
         )).detach()
+        progress.set_postfix(
+            contrastive=f"{contrastive_loss.item():.4f}",
+            season=f"{season_loss.item():.4f}",
+        )
 
     total, contrastive, season, classifier, summer, snow = (totals / num_batches).tolist()
     return TrainingMetrics(
@@ -156,7 +163,7 @@ def train_one_epoch(
 
 
 def main():
-    _, overrides = parse_args()
+    args, overrides = parse_args()
     cfg = OmegaConf.merge(
         OmegaConf.load(REPO_DIR / "config/train_config.yaml"),
         OmegaConf.from_dotlist(overrides),
@@ -196,6 +203,7 @@ def main():
         hidden_dim=cfg.model.projection_head.hidden_dim,
         projection_dropout=cfg.model.projection_head.dropout,
         season_classes=cfg.model.season_classifier.num_classes,
+        projection_architecture=cfg.model.projection_head.architecture,
     ).to(device)
     optimizer = torch.optim.AdamW(
         [p for p in model.parameters() if p.requires_grad],
@@ -216,9 +224,23 @@ def main():
     print(f"Training {cfg.checkpoint.run_name} on cached features: "
           f"{len(train_features['summer']):,} train / {len(val_features['summer']):,} val pairs", flush=True)
 
-    best_score, best_epoch = float("-inf"), 0
+    start_epoch, best_score, best_epoch = 1, float("-inf"), 0
+    if args.resume is not None:
+        checkpoint_path = args.resume.expanduser().resolve()
+        checkpoint = load_checkpoint(checkpoint_path, device)
+        restore_training_state(checkpoint, model, optimizer, scheduler)
+        start_epoch = checkpoint.epoch + 1
+        best_score = checkpoint.best_score
+        best_epoch = checkpoint.best_epoch
+        if start_epoch > cfg.training.epochs:
+            raise ValueError(
+                "Checkpoint already reached the configured number of epochs; "
+                "increase training.epochs to continue."
+            )
+        print(f"Resuming from epoch {start_epoch}", flush=True)
+
     try:
-        for epoch in range(1, cfg.training.epochs + 1):
+        for epoch in range(start_epoch, cfg.training.epochs + 1):
             train_metrics = train_one_epoch(
                 model, optimizer, criterion,
                 train_features["summer"], train_features["snow"], negative_index,

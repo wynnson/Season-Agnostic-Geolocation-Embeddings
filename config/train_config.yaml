@@ -15,8 +15,9 @@ model:
     mean: [0.485, 0.456, 0.406]
     std: [0.229, 0.224, 0.225]
   projection_head:
-    hidden_dim: 384
-    embedding_dim: 256
+    architecture: "residual"  # mlp, residual
+    hidden_dim: 768
+    embedding_dim: 384
     dropout: 0.0
   season_classifier:
     num_classes: 2
@@ -28,12 +29,12 @@ model:
 
 # Training
 training:
-  epochs: 100
+  epochs: 150
   batch_size: 32
   learning_rate: 0.0001
   weight_decay: 0.01
   temperature: 0.07
-  season_loss_weight: 0
+  season_loss_weight: 0.0
   grl_scale: 1.0
   sampled_hard_negatives_per_anchor: 3
   retrieval_chunk_size: 512
@@ -49,7 +50,7 @@ scheduler:
 # Checkpointing
 checkpoint:
   output_dir: "artifacts/checkpoints"
-  run_name: "dinov2_vits14_geo_grl_w0.0"
+  run_name: "dinov2_vits14_geo_grl_w0.0_residual"
 
 # Logging
 logging:
