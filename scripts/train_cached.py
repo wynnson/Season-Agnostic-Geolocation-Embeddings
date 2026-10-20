@@ -19,19 +19,9 @@ from omegaconf import OmegaConf
 from torch.nn import functional as F
 from torch.utils.tensorboard import SummaryWriter
 
-from scripts.train import (
-    TRAIN_CONTRASTIVE_LOSS,
-    TRAIN_SEASON_LOSS,
-    TRAIN_TOTAL_LOSS,
-    VALIDATION_MEAN_RECALL_AT_1,
-    VALIDATION_SNOW_TO_SUMMER_RECALL_AT_1,
-    VALIDATION_SNOW_TO_SUMMER_RECALL_AT_5,
-    VALIDATION_SUMMER_TO_SNOW_RECALL_AT_1,
-    VALIDATION_SUMMER_TO_SNOW_RECALL_AT_5,
-    save_checkpoint,
-)
 from src.datasets.seasonet import SeasoNetDataset
 from src.models.dinov2 import load_dinov2
+from src.training.checkpoint import save_checkpoint
 from src.preprocessing.schema import Pairs
 from src.training.evaluation import retrieval_recall_at_k
 from src.training.feature_cache import (
@@ -41,7 +31,27 @@ from src.training.feature_cache import (
     load_feature_cache,
 )
 from src.training.losses.info_nce import InfoNCELoss
-from src.training.schema import RECALL_AT_1, RECALL_AT_5, TrainingMetrics, ValidationMetrics
+from src.training.scheduler import build_scheduler
+from src.training.schema import (
+    RECALL_AT_1,
+    RECALL_AT_5,
+    HPARAM_BEST_MEAN_RECALL_AT_1,
+    TRAIN_CONTRASTIVE_HEAD_LOSS,
+    TRAIN_LEARNING_RATE,
+    TRAIN_SEASON_CLASSIFIER_ACCURACY,
+    TRAIN_SEASON_CLASSIFIER_LOSS,
+    TRAIN_SNOW_CLASSIFIER_ACCURACY,
+    TRAIN_SUMMER_CLASSIFIER_ACCURACY,
+    TRAIN_TOTAL_LOSS,
+    TRAINING_CONFIG_TEXT,
+    TrainingMetrics,
+    ValidationMetrics,
+    VALIDATION_RETRIEVAL_MEAN_RECALL_AT_1,
+    VALIDATION_RETRIEVAL_SNOW_TO_SUMMER_RECALL_AT_1,
+    VALIDATION_RETRIEVAL_SNOW_TO_SUMMER_RECALL_AT_5,
+    VALIDATION_RETRIEVAL_SUMMER_TO_SNOW_RECALL_AT_1,
+    VALIDATION_RETRIEVAL_SUMMER_TO_SNOW_RECALL_AT_5,
+)
 from src.utils.device import get_device
 
 
@@ -94,7 +104,7 @@ def train_one_epoch(
     order = torch.randperm(len(summer), generator=generator).to(device)
     num_batches = len(order) // batch_size  # drop_last, as in scripts/train.py
 
-    totals = torch.zeros(3, device=device)
+    totals = torch.zeros(6, device=device)
     for b in range(num_batches):
         idx = order[b * batch_size:(b + 1) * batch_size]
         negatives = negative_index[idx]
@@ -113,17 +123,36 @@ def train_one_epoch(
             torch.zeros(batch_size, dtype=torch.long, device=device),
             torch.ones(batch_size, dtype=torch.long, device=device),
         ))
-        season_loss = F.cross_entropy(torch.cat((summer_logits, snow_logits)), season_labels)
+        season_logits = torch.cat((summer_logits, snow_logits))
+        season_loss = F.cross_entropy(season_logits, season_labels)
+        season_predictions = season_logits.argmax(dim=1)
+        season_classifier_accuracy = (season_predictions == season_labels).float().mean()
+        summer_classifier_accuracy = (season_predictions[:batch_size] == 0).float().mean()
+        snow_classifier_accuracy = (season_predictions[batch_size:] == 1).float().mean()
         total_loss = contrastive_loss + season_loss_weight * season_loss
 
         optimizer.zero_grad(set_to_none=True)
         total_loss.backward()
         optimizer.step()
 
-        totals += torch.stack((total_loss, contrastive_loss, season_loss)).detach()
+        totals += torch.stack((
+            total_loss,
+            contrastive_loss,
+            season_loss,
+            season_classifier_accuracy,
+            summer_classifier_accuracy,
+            snow_classifier_accuracy,
+        )).detach()
 
-    total, contrastive, season = (totals / num_batches).tolist()
-    return TrainingMetrics(total_loss=total, contrastive_loss=contrastive, season_loss=season)
+    total, contrastive, season, classifier, summer, snow = (totals / num_batches).tolist()
+    return TrainingMetrics(
+        total_loss=total,
+        contrastive_loss=contrastive,
+        season_loss=season,
+        season_classifier_accuracy=classifier,
+        summer_classifier_accuracy=summer,
+        snow_classifier_accuracy=snow,
+    )
 
 
 def main():
@@ -132,6 +161,7 @@ def main():
         OmegaConf.load(REPO_DIR / "config/train_config.yaml"),
         OmegaConf.from_dotlist(overrides),
     )
+    checkpoint_config = OmegaConf.to_container(cfg, resolve=True)
     if cfg.model.tuning != "frozen":
         raise ValueError("Cached features are only valid with model.tuning: frozen")
 
@@ -172,10 +202,17 @@ def main():
         lr=cfg.training.learning_rate,
         weight_decay=cfg.training.weight_decay,
     )
+    scheduler = build_scheduler(
+        optimizer,
+        cfg.scheduler,
+        cfg.training.epochs,
+    )
     criterion = InfoNCELoss(cfg.training.temperature)
 
     checkpoint_prefix = REPO_DIR / cfg.checkpoint.output_dir / cfg.checkpoint.run_name
     writer = SummaryWriter(log_dir=REPO_DIR / cfg.logging.tensorboard_dir / cfg.checkpoint.run_name)
+    writer.add_text(TRAINING_CONFIG_TEXT, OmegaConf.to_yaml(cfg.training, resolve=True), global_step=0,)
+
     print(f"Training {cfg.checkpoint.run_name} on cached features: "
           f"{len(train_features['summer']):,} train / {len(val_features['summer']):,} val pairs", flush=True)
 
@@ -200,13 +237,17 @@ def main():
 
             for tag, value in [
                 (TRAIN_TOTAL_LOSS, train_metrics.total_loss),
-                (TRAIN_CONTRASTIVE_LOSS, train_metrics.contrastive_loss),
-                (TRAIN_SEASON_LOSS, train_metrics.season_loss),
-                (VALIDATION_MEAN_RECALL_AT_1, validation_metrics.mean_recall_at_1),
-                (VALIDATION_SUMMER_TO_SNOW_RECALL_AT_1, validation_metrics.summer_to_snow[RECALL_AT_1]),
-                (VALIDATION_SNOW_TO_SUMMER_RECALL_AT_1, validation_metrics.snow_to_summer[RECALL_AT_1]),
-                (VALIDATION_SUMMER_TO_SNOW_RECALL_AT_5, validation_metrics.summer_to_snow[RECALL_AT_5]),
-                (VALIDATION_SNOW_TO_SUMMER_RECALL_AT_5, validation_metrics.snow_to_summer[RECALL_AT_5]),
+                (TRAIN_CONTRASTIVE_HEAD_LOSS, train_metrics.contrastive_loss),
+                (TRAIN_SEASON_CLASSIFIER_LOSS, train_metrics.season_loss),
+                (TRAIN_SEASON_CLASSIFIER_ACCURACY, train_metrics.season_classifier_accuracy),
+                (TRAIN_SUMMER_CLASSIFIER_ACCURACY, train_metrics.summer_classifier_accuracy),
+                (TRAIN_SNOW_CLASSIFIER_ACCURACY, train_metrics.snow_classifier_accuracy),
+                (TRAIN_LEARNING_RATE, optimizer.param_groups[0]["lr"]),
+                (VALIDATION_RETRIEVAL_MEAN_RECALL_AT_1, validation_metrics.mean_recall_at_1),
+                (VALIDATION_RETRIEVAL_SUMMER_TO_SNOW_RECALL_AT_1, validation_metrics.summer_to_snow[RECALL_AT_1]),
+                (VALIDATION_RETRIEVAL_SNOW_TO_SUMMER_RECALL_AT_1, validation_metrics.snow_to_summer[RECALL_AT_1]),
+                (VALIDATION_RETRIEVAL_SUMMER_TO_SNOW_RECALL_AT_5, validation_metrics.summer_to_snow[RECALL_AT_5]),
+                (VALIDATION_RETRIEVAL_SNOW_TO_SUMMER_RECALL_AT_5, validation_metrics.snow_to_summer[RECALL_AT_5]),
             ]:
                 writer.add_scalar(tag, value, epoch)
 
@@ -221,13 +262,27 @@ def main():
                 flush=True,
             )
 
-            checkpoint_args = (model, optimizer, epoch, train_metrics, validation_metrics, best_score, best_epoch, cfg)
-            if epoch % cfg.checkpoint.save_every == 0:
-                save_checkpoint(checkpoint_prefix.with_name(f"{checkpoint_prefix.name}_epoch_{epoch:03d}.pt"), *checkpoint_args)
+            scheduler.step()
+            checkpoint_args = (
+                model,
+                optimizer,
+                scheduler,
+                epoch,
+                train_metrics,
+                validation_metrics,
+                best_score,
+                best_epoch,
+                checkpoint_config,
+            )
             if is_best:
                 save_checkpoint(checkpoint_prefix.with_name(f"{checkpoint_prefix.name}_best.pt"), *checkpoint_args)
             save_checkpoint(checkpoint_prefix.with_name(f"{checkpoint_prefix.name}_last.pt"), *checkpoint_args)
 
+        writer.add_hparams(
+            hparam_dict=OmegaConf.to_container(cfg.training, resolve=True),
+            metric_dict={HPARAM_BEST_MEAN_RECALL_AT_1: best_score},
+            run_name=".",
+        )
         print(f"Best epoch: {best_epoch} (mean_recall@1={best_score:.4f})", flush=True)
     finally:
         writer.close()

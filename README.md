@@ -52,7 +52,7 @@ Resume from a checkpoint:
 uv run python scripts/train.py --resume artifacts/checkpoints/dinov2_vits14_geo_grl_last.pt
 ```
 
-Checkpoints are saved as `<run_name>_best.pt`, `<run_name>_last.pt`, and periodic `<run_name>_epoch_XXX.pt` files under `artifacts/checkpoints`. Set `checkpoint.run_name` in `config/train_config.yaml` for each independent run. View training metrics with:
+Checkpoints are saved as `<run_name>_best.pt` and `<run_name>_last.pt` under `artifacts/checkpoints`. Set `checkpoint.run_name` in `config/train_config.yaml` for each independent run. View training metrics with:
 
 ```bash
 uv run tensorboard --logdir artifacts/tensorboard

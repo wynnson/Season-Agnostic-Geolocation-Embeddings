@@ -28,12 +28,12 @@ model:
 
 # Training
 training:
-  epochs: 20
+  epochs: 100
   batch_size: 32
   learning_rate: 0.0001
   weight_decay: 0.01
   temperature: 0.07
-  season_loss_weight: 0.1
+  season_loss_weight: 0
   grl_scale: 1.0
   sampled_hard_negatives_per_anchor: 3
   retrieval_chunk_size: 512
@@ -42,11 +42,14 @@ training:
 optimizer:
   name: "adamw"
 
+scheduler:
+  name: "cosine"
+  min_learning_rate: 0.000001
+
 # Checkpointing
 checkpoint:
   output_dir: "artifacts/checkpoints"
-  run_name: "dinov2_vits14_geo_grl"
-  save_every: 5
+  run_name: "dinov2_vits14_geo_grl_w0.0"
 
 # Logging
 logging:

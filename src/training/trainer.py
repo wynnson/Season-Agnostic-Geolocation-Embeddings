@@ -108,6 +108,10 @@ class Trainer:
             torch.ones(batch_size, dtype=torch.long, device=self.device),
         ))
         season_loss = F.cross_entropy(season_logits, season_labels)
+        season_predictions = season_logits.argmax(dim=1)
+        season_classifier_accuracy = (season_predictions == season_labels).float().mean()
+        summer_classifier_accuracy = (season_predictions[:batch_size] == 0).float().mean()
+        snow_classifier_accuracy = (season_predictions[batch_size:] == 1).float().mean()
 
         total_loss = contrastive_loss + self.season_loss_weight * season_loss
         total_loss.backward()
@@ -117,6 +121,9 @@ class Trainer:
             total_loss=total_loss.item(),
             contrastive_loss=contrastive_loss.item(),
             season_loss=season_loss.item(),
+            season_classifier_accuracy=season_classifier_accuracy.item(),
+            summer_classifier_accuracy=summer_classifier_accuracy.item(),
+            snow_classifier_accuracy=snow_classifier_accuracy.item(),
         )
 
     def train_one_epoch(self, data_loader: DataLoader) -> TrainingMetrics:
@@ -125,6 +132,9 @@ class Trainer:
         total_loss = 0.0
         contrastive_loss = 0.0
         season_loss = 0.0
+        season_classifier_accuracy = 0.0
+        summer_classifier_accuracy = 0.0
+        snow_classifier_accuracy = 0.0
         total_samples = 0
 
         for batch in tqdm(data_loader, desc="Training", leave=False):
@@ -134,12 +144,18 @@ class Trainer:
             total_loss += metrics.total_loss * batch_size
             contrastive_loss += metrics.contrastive_loss * batch_size
             season_loss += metrics.season_loss * batch_size
+            season_classifier_accuracy += metrics.season_classifier_accuracy * batch_size
+            summer_classifier_accuracy += metrics.summer_classifier_accuracy * batch_size
+            snow_classifier_accuracy += metrics.snow_classifier_accuracy * batch_size
             total_samples += batch_size
 
         return TrainingMetrics(
             total_loss=total_loss / total_samples,
             contrastive_loss=contrastive_loss / total_samples,
             season_loss=season_loss / total_samples,
+            season_classifier_accuracy=season_classifier_accuracy / total_samples,
+            summer_classifier_accuracy=summer_classifier_accuracy / total_samples,
+            snow_classifier_accuracy=snow_classifier_accuracy / total_samples,
         )
 
     def validate(self, data_loader: DataLoader) -> ValidationMetrics:

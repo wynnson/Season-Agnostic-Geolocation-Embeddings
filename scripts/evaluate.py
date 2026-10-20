@@ -13,6 +13,7 @@ from torch.utils.data import DataLoader
 
 from src.datasets.seasonet import SeasoNetDataset
 from src.models.dinov2 import embed_dinov2_images, load_dinov2, load_frozen_dinov2
+from src.training.checkpoint import load_checkpoint
 from src.training.evaluation import evaluate_cross_season_retrieval
 from src.utils.device import get_device
 
@@ -21,8 +22,8 @@ def load_trained_model(checkpoint_path: Path, device: torch.device):
     if not checkpoint_path.is_file():
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
-    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
-    train_cfg = OmegaConf.create(checkpoint["config"])
+    checkpoint = load_checkpoint(checkpoint_path, device)
+    train_cfg = OmegaConf.create(checkpoint.config)
     model = load_dinov2(
         model_name=train_cfg.model.backbone,
         repository=train_cfg.model.repository,
@@ -32,7 +33,7 @@ def load_trained_model(checkpoint_path: Path, device: torch.device):
         projection_dropout=train_cfg.model.projection_head.dropout,
         season_classes=train_cfg.model.season_classifier.num_classes,
     ).to(device)
-    model.load_state_dict(checkpoint["model_state_dict"])
+    model.load_state_dict(checkpoint.model_state_dict)
     model.eval()
     return model, train_cfg.model
 
