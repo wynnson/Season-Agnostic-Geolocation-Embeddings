@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from src.datasets.seasonet import SeasoNetDataset
-from src.models.dinov2 import load_dinov2
+from src.models.dinov2 import backbone_weights_path, load_dinov2
 from src.training.checkpoint import load_checkpoint, restore_training_state, save_checkpoint
 from src.training.losses.info_nce import InfoNCELoss
 from src.training.scheduler import build_scheduler
@@ -119,6 +119,7 @@ def main():
         projection_dropout=cfg.model.projection_head.dropout,
         season_classes=cfg.model.season_classifier.num_classes,
         projection_architecture=cfg.model.projection_head.architecture,
+        weights=backbone_weights_path(cfg.model, REPO_DIR),
     ).to(device)
 
     if cfg.optimizer.name != "adamw":

@@ -12,7 +12,7 @@ from omegaconf import OmegaConf
 from torch.utils.data import DataLoader
 
 from src.datasets.seasonet import SeasoNetDataset
-from src.models.dinov2 import embed_dinov2_images, load_dinov2, load_frozen_dinov2
+from src.models.dinov2 import backbone_weights_path, embed_dinov2_images, load_dinov2, load_frozen_dinov2
 from src.training.checkpoint import load_checkpoint
 from src.training.evaluation import evaluate_cross_season_retrieval
 from src.utils.device import get_device
@@ -33,6 +33,7 @@ def load_trained_model(checkpoint_path: Path, device: torch.device):
         projection_dropout=train_cfg.model.projection_head.dropout,
         season_classes=train_cfg.model.season_classifier.num_classes,
         projection_architecture=train_cfg.model.projection_head.get("architecture", "mlp"),
+        weights=backbone_weights_path(train_cfg.model, REPO_DIR),
     ).to(device)
     model.load_state_dict(checkpoint.model_state_dict)
     model.eval()
@@ -40,7 +41,10 @@ def load_trained_model(checkpoint_path: Path, device: torch.device):
 
 
 def main():
-    cfg = OmegaConf.load(REPO_DIR / "config/evaluation_config.yaml")
+    cfg = OmegaConf.merge(
+        OmegaConf.load(REPO_DIR / "config/evaluation_config.yaml"),
+        OmegaConf.from_dotlist(sys.argv[1:]),
+    )
     preprocessing_cfg = OmegaConf.load(REPO_DIR / "config/preprocessing_config.yaml")
     manifest_path = (
         REPO_DIR
@@ -72,10 +76,11 @@ def main():
             model = load_frozen_dinov2(
                 cfg.model.backbone,
                 cfg.model.repository,
+                backbone_weights_path(cfg.model, REPO_DIR),
             ).to(device)
             model.eval()
             model_cfg = cfg.model
-            model_label = "Frozen DINOv2"
+            model_label = f"Frozen {cfg.model.backbone}"
         case "lora":
             raise NotImplementedError("LoRA evaluation is not implemented yet")
         case mode:

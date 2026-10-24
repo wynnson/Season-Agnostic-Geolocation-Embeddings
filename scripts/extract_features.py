@@ -11,7 +11,7 @@ import torch
 from omegaconf import OmegaConf
 
 from src.datasets.seasonet import SeasoNetDataset
-from src.models.dinov2 import load_frozen_dinov2
+from src.models.dinov2 import backbone_weights_path, load_frozen_dinov2
 from src.training.feature_cache import SPLITS, extract_split_features, feature_cache_path
 from src.utils.device import get_device
 
@@ -20,7 +20,10 @@ EXTRACTION_BATCH_SIZE = 128
 
 
 def main() -> None:
-    cfg = OmegaConf.load(REPO_DIR / "config/train_config.yaml")
+    cfg = OmegaConf.merge(
+        OmegaConf.load(REPO_DIR / "config/train_config.yaml"),
+        OmegaConf.from_dotlist(sys.argv[1:]),
+    )
     preprocessing_cfg = OmegaConf.load(REPO_DIR / "config/preprocessing_config.yaml")
     artifacts_dir = REPO_DIR / preprocessing_cfg.output.artifacts_dir
     manifest = OmegaConf.load(artifacts_dir / preprocessing_cfg.output.manifest_filename)
@@ -29,7 +32,11 @@ def main() -> None:
     pairs = pd.read_parquet(REPO_DIR / manifest.pairs_path)
 
     device = get_device()
-    backbone = load_frozen_dinov2(cfg.model.backbone, cfg.model.repository).to(device)
+    backbone = load_frozen_dinov2(
+        cfg.model.backbone,
+        cfg.model.repository,
+        backbone_weights_path(cfg.model, REPO_DIR),
+    ).to(device)
 
     splits = {}
     for split in SPLITS:

@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -112,6 +114,20 @@ class SeasonAgnosticDINOv2(nn.Module):
         return self
 
 
+def backbone_weights_path(model_cfg, repo_dir: Path) -> Path | None:
+    weights = model_cfg.get("weights")
+    return None if weights is None else repo_dir / weights
+
+
+def load_backbone(model_name: str, repository: str, weights: Path | None = None) -> nn.Module:
+    # DINOv3 weights are gated, so torch.hub cannot download them and needs a local copy.
+    if weights is None:
+        return torch.hub.load(repository, model_name)
+    if not weights.is_file():
+        raise FileNotFoundError(f"Backbone weights not found: {weights}")
+    return torch.hub.load(repository, model_name, weights=str(weights))
+
+
 def load_dinov2(
     model_name: str,
     repository: str,
@@ -121,8 +137,9 @@ def load_dinov2(
     projection_dropout: float,
     season_classes: int,
     projection_architecture: str = "mlp",
+    weights: Path | None = None,
 ) -> SeasonAgnosticDINOv2:
-    backbone = torch.hub.load(repository, model_name)
+    backbone = load_backbone(model_name, repository, weights)
     model = SeasonAgnosticDINOv2(
         backbone=backbone,
         embedding_dim=embedding_dim,
@@ -142,8 +159,8 @@ def load_dinov2(
     return model
 
 
-def load_frozen_dinov2(model_name: str, repository: str) -> nn.Module:
-    model = torch.hub.load(repository, model_name)
+def load_frozen_dinov2(model_name: str, repository: str, weights: Path | None = None) -> nn.Module:
+    model = load_backbone(model_name, repository, weights)
     model.eval()
     for parameter in model.parameters():
         parameter.requires_grad = False

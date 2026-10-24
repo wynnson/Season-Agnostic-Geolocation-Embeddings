@@ -21,7 +21,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm.auto import tqdm
 
 from src.datasets.seasonet import SeasoNetDataset
-from src.models.dinov2 import load_dinov2
+from src.models.dinov2 import backbone_weights_path, load_dinov2
 from src.training.checkpoint import load_checkpoint, restore_training_state, save_checkpoint
 from src.preprocessing.schema import Pairs
 from src.training.evaluation import retrieval_recall_at_k
@@ -204,6 +204,7 @@ def main():
         projection_dropout=cfg.model.projection_head.dropout,
         season_classes=cfg.model.season_classifier.num_classes,
         projection_architecture=cfg.model.projection_head.architecture,
+        weights=backbone_weights_path(cfg.model, REPO_DIR),
     ).to(device)
     optimizer = torch.optim.AdamW(
         [p for p in model.parameters() if p.requires_grad],

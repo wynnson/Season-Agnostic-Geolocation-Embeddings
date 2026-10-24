@@ -9,6 +9,7 @@ data:
 model:
   repository: "facebookresearch/dinov2"
   backbone: "dinov2_vits14"
+  weights: null  # local checkpoint path; required for DINOv3 (gated download)
   tuning: "frozen"  # frozen, lora, full
   image_size: 224
   normalization:

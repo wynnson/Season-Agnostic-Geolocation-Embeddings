@@ -40,6 +40,18 @@ uv run python scripts/evaluate.py
 
 Set `evaluation.mode: "frozen"` in `config/evaluation_config.yaml` to evaluate frozen DINOv2 instead.
 
+### DINOv3
+
+DINOv3 weights are gated. Accept the license on the [model page](https://huggingface.co/facebook/dinov3-vits16-pretrain-lvd1689m) or through the [DINOv3 repo](https://github.com/facebookresearch/dinov3), download `dinov3_vits16_pretrain_lvd1689m-08c60483.pth`, and put it in `artifacts/weights/`. Then select it with config overrides (or the same keys in the config files):
+
+```bash
+uv run python scripts/evaluate.py evaluation.mode=frozen \
+  model.repository=facebookresearch/dinov3 model.backbone=dinov3_vits16 \
+  model.weights=artifacts/weights/dinov3_vits16_pretrain_lvd1689m-08c60483.pth
+```
+
+`scripts/extract_features.py` and `scripts/train_cached.py` take the same overrides.
+
 Train the model:
 
 ```bash
