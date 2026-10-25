@@ -1,4 +1,4 @@
-"""Cache frozen DINOv2 features so frozen-backbone runs train only the heads.
+"""Cache frozen-backbone features so frozen-backbone runs train only the heads.
 
 Valid only while the backbone is frozen and images are not augmented.
 """
@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
 from src.datasets.seasonet import SeasoNetDataset
-from src.models.dinov2 import SeasonAgnosticDINOv2, gradient_reverse, preprocess_images
+from src.models.season_agnostic_model import SeasonAgnosticModel, gradient_reverse, preprocess_images
 from src.preprocessing.schema import Pairs
 
 
@@ -68,16 +68,16 @@ def load_feature_cache(path: Path, pairs: pd.DataFrame) -> dict:
 
 
 def forward_heads(
-    model: SeasonAgnosticDINOv2,
+    model: SeasonAgnosticModel,
     features: torch.Tensor,
     grl_scale: float,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    # Mirrors SeasonAgnosticDINOv2.forward_training after the backbone.
+    # Mirrors SeasonAgnosticModel.forward_training after the backbone.
     embedding = F.normalize(model.projection_head(features), dim=-1)
     season_logits = model.season_classifier(gradient_reverse(embedding, grl_scale))
     return embedding, season_logits
 
 
-def embed_features(model: SeasonAgnosticDINOv2, features: torch.Tensor) -> torch.Tensor:
-    # Mirrors SeasonAgnosticDINOv2.forward_embeddings after the backbone.
+def embed_features(model: SeasonAgnosticModel, features: torch.Tensor) -> torch.Tensor:
+    # Mirrors SeasonAgnosticModel.forward_embeddings after the backbone.
     return F.normalize(model.projection_head(features), dim=-1)

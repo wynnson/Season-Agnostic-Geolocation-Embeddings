@@ -12,7 +12,11 @@ from omegaconf import OmegaConf
 from torch.utils.data import DataLoader
 
 from src.datasets.seasonet import SeasoNetDataset
-from src.models.dinov2 import backbone_weights_path, embed_dinov2_images, load_dinov2, load_frozen_dinov2
+from src.models.season_agnostic_model import (
+    embed_images,
+    load_frozen_backbone,
+    load_model,
+)
 from src.training.checkpoint import load_checkpoint
 from src.training.evaluation import evaluate_cross_season_retrieval
 from src.utils.device import get_device
@@ -24,7 +28,7 @@ def load_trained_model(checkpoint_path: Path, device: torch.device):
 
     checkpoint = load_checkpoint(checkpoint_path, device)
     train_cfg = OmegaConf.create(checkpoint.config)
-    model = load_dinov2(
+    model = load_model(
         model_name=train_cfg.model.backbone,
         repository=train_cfg.model.repository,
         tuning=train_cfg.model.tuning,
@@ -33,7 +37,7 @@ def load_trained_model(checkpoint_path: Path, device: torch.device):
         projection_dropout=train_cfg.model.projection_head.dropout,
         season_classes=train_cfg.model.season_classifier.num_classes,
         projection_architecture=train_cfg.model.projection_head.get("architecture", "mlp"),
-        weights=backbone_weights_path(train_cfg.model, REPO_DIR),
+        weights=train_cfg.model.weights,
     ).to(device)
     model.load_state_dict(checkpoint.model_state_dict)
     model.eval()
@@ -71,12 +75,12 @@ def main():
         case "trained":
             checkpoint_path = REPO_DIR / cfg.evaluation.checkpoint_path
             model, model_cfg = load_trained_model(checkpoint_path, device)
-            model_label = f"Trained DINOv2 ({checkpoint_path.name})"
+            model_label = f"Trained season-agnostic model ({checkpoint_path.name})"
         case "frozen":
-            model = load_frozen_dinov2(
+            model = load_frozen_backbone(
                 cfg.model.backbone,
                 cfg.model.repository,
-                backbone_weights_path(cfg.model, REPO_DIR),
+                cfg.model.weights,
             ).to(device)
             model.eval()
             model_cfg = cfg.model
@@ -87,7 +91,7 @@ def main():
             raise ValueError(f"Unsupported evaluation mode: {mode}")
 
     def embed_fn(images: torch.Tensor) -> torch.Tensor:
-        return embed_dinov2_images(
+        return embed_images(
             model,
             images.to(device),
             model_cfg.image_size,

@@ -11,7 +11,7 @@ import torch
 from omegaconf import OmegaConf
 
 from src.datasets.seasonet import SeasoNetDataset
-from src.models.dinov2 import backbone_weights_path, load_frozen_dinov2
+from src.models.season_agnostic_model import load_frozen_backbone
 from src.training.feature_cache import SPLITS, extract_split_features, feature_cache_path
 from src.utils.device import get_device
 
@@ -32,10 +32,10 @@ def main() -> None:
     pairs = pd.read_parquet(REPO_DIR / manifest.pairs_path)
 
     device = get_device()
-    backbone = load_frozen_dinov2(
+    backbone = load_frozen_backbone(
         cfg.model.backbone,
         cfg.model.repository,
-        backbone_weights_path(cfg.model, REPO_DIR),
+        cfg.model.weights,
     ).to(device)
 
     splits = {}

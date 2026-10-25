@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
 from src.datasets.seasonet import SeasoNetData
-from src.models.dinov2 import SeasonAgnosticDINOv2, preprocess_images
+from src.models.season_agnostic_model import SeasonAgnosticModel, preprocess_images
 from src.training.evaluation import evaluate_cross_season_retrieval
 from src.training.schema import TrainingHistory, TrainingMetrics, ValidationMetrics
 
@@ -15,7 +15,7 @@ from src.training.schema import TrainingHistory, TrainingMetrics, ValidationMetr
 class Trainer:
     def __init__(
         self,
-        model: SeasonAgnosticDINOv2,
+        model: SeasonAgnosticModel,
         optimizer: torch.optim.Optimizer,
         device: torch.device,
         image_size: int,

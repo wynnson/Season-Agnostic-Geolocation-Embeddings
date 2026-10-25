@@ -60,7 +60,7 @@ def build_projection_head(
             raise ValueError(f"Unsupported projection head architecture: {architecture}")
 
 
-class SeasonAgnosticDINOv2(nn.Module):
+class SeasonAgnosticModel(nn.Module):
     def __init__(
         self,
         backbone: nn.Module,
@@ -73,8 +73,9 @@ class SeasonAgnosticDINOv2(nn.Module):
         super().__init__()
         self.backbone = backbone
         backbone_dim = getattr(backbone, "embed_dim", None)
+
         if not isinstance(backbone_dim, int):
-            raise ValueError("DINOv2 backbone must expose an integer embed_dim")
+            raise ValueError("Backbone must expose an integer embed_dim")
 
         self.projection_head = build_projection_head(
             backbone_dim,
@@ -114,21 +115,19 @@ class SeasonAgnosticDINOv2(nn.Module):
         return self
 
 
-def backbone_weights_path(model_cfg, repo_dir: Path) -> Path | None:
-    weights = model_cfg.get("weights")
-    return None if weights is None else repo_dir / weights
-
-
-def load_backbone(model_name: str, repository: str, weights: Path | None = None) -> nn.Module:
-    # DINOv3 weights are gated, so torch.hub cannot download them and needs a local copy.
+def load_backbone(model_name: str, repository: str, weights: str | Path | None = None) -> nn.Module:
+    # Some backbone weights are gated, so torch.hub needs a local copy.
     if weights is None:
         return torch.hub.load(repository, model_name)
+
+    weights = Path(weights)
     if not weights.is_file():
         raise FileNotFoundError(f"Backbone weights not found: {weights}")
+
     return torch.hub.load(repository, model_name, weights=str(weights))
 
 
-def load_dinov2(
+def load_model(
     model_name: str,
     repository: str,
     tuning: str,
@@ -137,10 +136,10 @@ def load_dinov2(
     projection_dropout: float,
     season_classes: int,
     projection_architecture: str = "mlp",
-    weights: Path | None = None,
-) -> SeasonAgnosticDINOv2:
+    weights: str | Path | None = None,
+) -> SeasonAgnosticModel:
     backbone = load_backbone(model_name, repository, weights)
-    model = SeasonAgnosticDINOv2(
+    model = SeasonAgnosticModel(
         backbone=backbone,
         embedding_dim=embedding_dim,
         hidden_dim=hidden_dim,
@@ -154,17 +153,22 @@ def load_dinov2(
     elif tuning == "lora":
         raise NotImplementedError("LoRA adapter insertion is not implemented yet")
     elif tuning != "full":
-        raise ValueError(f"Unsupported DINOv2 tuning mode: {tuning}")
+        raise ValueError(f"Unsupported backbone tuning mode: {tuning}")
 
+    print(f"Using: {model_name} backbone")
     return model
 
 
-def load_frozen_dinov2(model_name: str, repository: str, weights: Path | None = None) -> nn.Module:
-    model = load_backbone(model_name, repository, weights)
-    model.eval()
-    for parameter in model.parameters():
+def load_frozen_backbone(
+    model_name: str, repository: str, weights: str | Path | None = None
+) -> nn.Module:
+    backbone = load_backbone(model_name, repository, weights)
+    backbone.eval()    
+    
+    for parameter in backbone.parameters():
         parameter.requires_grad = False
-    return model
+
+    return backbone
 
 
 def preprocess_images(
@@ -184,7 +188,7 @@ def preprocess_images(
     return normalize(images)
 
 
-def embed_dinov2_images(
+def embed_images(
     model: nn.Module,
     images: torch.Tensor,
     image_size: int,
@@ -192,6 +196,6 @@ def embed_dinov2_images(
     std: tuple[float, float, float],
 ) -> torch.Tensor:
     images = preprocess_images(images, image_size, mean, std)
-    if isinstance(model, SeasonAgnosticDINOv2):
+    if isinstance(model, SeasonAgnosticModel):
         return model.forward_embeddings(images)
     return F.normalize(model(images), dim=1)

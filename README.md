@@ -38,7 +38,7 @@ Evaluate the configured trained checkpoint on the geographic validation split:
 uv run python scripts/evaluate.py
 ```
 
-Set `evaluation.mode: "frozen"` in `config/evaluation_config.yaml` to evaluate frozen DINOv2 instead.
+Set `evaluation.mode: "frozen"` in `config/evaluation_config.yaml` to evaluate frozen model instead.
 
 ### DINOv3
 

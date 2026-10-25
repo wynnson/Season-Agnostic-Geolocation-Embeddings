@@ -1,4 +1,4 @@
-"""Train the projection head and season classifier on cached frozen-DINOv2 features.
+"""Train the projection head and season classifier on cached frozen-backbone features.
 
 Same objective and checkpoint format as scripts/train.py with model.tuning: frozen.
 Config values can be overridden from the command line, for example:
@@ -21,7 +21,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm.auto import tqdm
 
 from src.datasets.seasonet import SeasoNetDataset
-from src.models.dinov2 import backbone_weights_path, load_dinov2
+from src.models.season_agnostic_model import load_model
 from src.training.checkpoint import load_checkpoint, restore_training_state, save_checkpoint
 from src.preprocessing.schema import Pairs
 from src.training.evaluation import retrieval_recall_at_k
@@ -57,7 +57,7 @@ from src.utils.device import get_device
 
 
 def parse_args() -> tuple[argparse.Namespace, list[str]]:
-    parser = argparse.ArgumentParser(description="Train heads on cached frozen DINOv2 features.")
+    parser = argparse.ArgumentParser(description="Train heads on cached frozen-backbone features.")
     parser.add_argument("--resume", type=Path, help="Checkpoint path to resume from.")
     return parser.parse_known_args()
 
@@ -195,7 +195,7 @@ def main():
     ).to(device)
 
     # Full model (with the frozen backbone) so checkpoints load in evaluate.py and train.py.
-    model = load_dinov2(
+    model = load_model(
         model_name=cfg.model.backbone,
         repository=cfg.model.repository,
         tuning=cfg.model.tuning,
@@ -204,7 +204,7 @@ def main():
         projection_dropout=cfg.model.projection_head.dropout,
         season_classes=cfg.model.season_classifier.num_classes,
         projection_architecture=cfg.model.projection_head.architecture,
-        weights=backbone_weights_path(cfg.model, REPO_DIR),
+        weights=cfg.model.weights,
     ).to(device)
     optimizer = torch.optim.AdamW(
         [p for p in model.parameters() if p.requires_grad],
