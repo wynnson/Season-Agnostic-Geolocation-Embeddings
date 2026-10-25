@@ -10,13 +10,13 @@ model:
   repository: "facebookresearch/dinov3" # for dinov2, specify facebookresearch/dinov2
   backbone: "dinov3_vits16"
   weights: "artifacts/weights/dinov3_vits16_pretrain_lvd1689m-08c60483.pth"  # local checkpoint path; required for DINOv3 (gated download)
-  tuning: "frozen"  # frozen, lora, full
+  tuning: "lora"  # frozen, lora, full
   image_size: 224
   normalization:
     mean: [0.485, 0.456, 0.406]
     std: [0.229, 0.224, 0.225]
   projection_head:
-    architecture: "mlp"  # mlp, residual
+    architecture: "residual"  # mlp, residual
     hidden_dim: 768
     embedding_dim: 384
     dropout: 0.0
@@ -26,18 +26,22 @@ model:
     rank: 8
     alpha: 16
     dropout: 0.0
-    target_modules: ["qkv", "proj"]
+    target_modules:
+      - blocks.10.attn.qkv
+      - blocks.10.attn.proj
+      - blocks.11.attn.qkv
+      - blocks.11.attn.proj
 
 # Training
 training:
-  epochs: 75
+  epochs: 100
   batch_size: 32
-  learning_rate: 0.0001
+  learning_rate: .0001
   weight_decay: 0.01
   temperature: 0.07
-  season_loss_weight: 0.0
-  grl_scale: 1.0
-  sampled_hard_negatives_per_anchor: 3
+  season_loss_weight: 0.25
+  grl_scale: 2.0
+  sampled_hard_negatives_per_anchor: 5
   retrieval_chunk_size: 512
 
 # Optimizer
@@ -51,7 +55,7 @@ scheduler:
 # Checkpointing
 checkpoint:
   output_dir: "artifacts/checkpoints"
-  run_name: "dinov3_vits16_geo_grl_w0.0_mlp"
+  run_name: "dinov3_vits16_geo_grl_lora_w0.0_residual_hard_5_b128_sw_.25_grl_2"
 
 # Logging
 logging:

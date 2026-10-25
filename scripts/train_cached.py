@@ -62,7 +62,15 @@ def parse_args() -> tuple[argparse.Namespace, list[str]]:
     return parser.parse_known_args()
 
 
-def build_hard_negative_index(train_pairs: pd.DataFrame, hard_negatives: pd.DataFrame, data_dir: Path, k: int) -> torch.Tensor:
+def build_hard_negative_index(
+    train_pairs: pd.DataFrame,
+    hard_negatives: pd.DataFrame,
+    data_dir: Path,
+    k: int,
+) -> torch.Tensor | None:
+    if k == 0:
+        return None
+
     # Reuse the dataset's lookup so negatives match scripts/train.py exactly.
     dataset = SeasoNetDataset(
         train_pairs,
@@ -95,7 +103,7 @@ def train_one_epoch(
     criterion: InfoNCELoss,
     summer: torch.Tensor,
     snow: torch.Tensor,
-    negative_index: torch.Tensor,
+    negative_index: torch.Tensor | None,
     batch_size: int,
     season_loss_weight: float,
     grl_scale: float,
@@ -110,12 +118,15 @@ def train_one_epoch(
     progress = tqdm(range(num_batches), desc="Cached training", unit="batch", leave=False)
     for b in progress:
         idx = order[b * batch_size:(b + 1) * batch_size]
-        negatives = negative_index[idx]
-
         summer_embeddings, summer_logits = forward_heads(model, summer[idx], grl_scale)
         snow_embeddings, snow_logits = forward_heads(model, snow[idx], grl_scale)
-        summer_negative_embeddings = embed_features(model, summer[negatives])
-        snow_negative_embeddings = embed_features(model, snow[negatives])
+        if negative_index is None:
+            summer_negative_embeddings = None
+            snow_negative_embeddings = None
+        else:
+            negatives = negative_index[idx]
+            summer_negative_embeddings = embed_features(model, summer[negatives])
+            snow_negative_embeddings = embed_features(model, snow[negatives])
 
         contrastive_loss = (
             criterion(summer_embeddings, snow_embeddings, snow_negative_embeddings)
@@ -192,7 +203,9 @@ def main():
     val_features = {s: cache["splits"]["val"][s].to(device) for s in ("summer", "snow")}
     negative_index = build_hard_negative_index(
         pairs, hard_negatives, data_dir, cfg.training.sampled_hard_negatives_per_anchor
-    ).to(device)
+    )
+    if negative_index is not None:
+        negative_index = negative_index.to(device)
 
     # Full model (with the frozen backbone) so checkpoints load in evaluate.py and train.py.
     model = load_model(

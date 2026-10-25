@@ -120,6 +120,7 @@ def main():
         season_classes=cfg.model.season_classifier.num_classes,
         projection_architecture=cfg.model.projection_head.architecture,
         weights=cfg.model.weights,
+        lora_config=cfg.model.lora,
     ).to(device)
 
     if cfg.optimizer.name != "adamw":

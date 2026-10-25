@@ -38,6 +38,7 @@ def load_trained_model(checkpoint_path: Path, device: torch.device):
         season_classes=train_cfg.model.season_classifier.num_classes,
         projection_architecture=train_cfg.model.projection_head.get("architecture", "mlp"),
         weights=train_cfg.model.weights,
+        lora_config=train_cfg.model.get("lora"),
     ).to(device)
     model.load_state_dict(checkpoint.model_state_dict)
     model.eval()
@@ -72,7 +73,7 @@ def main():
     device = get_device()
 
     match cfg.evaluation.mode:
-        case "trained":
+        case "trained" | "lora":
             checkpoint_path = REPO_DIR / cfg.evaluation.checkpoint_path
             model, model_cfg = load_trained_model(checkpoint_path, device)
             model_label = f"Trained season-agnostic model ({checkpoint_path.name})"
@@ -85,8 +86,6 @@ def main():
             model.eval()
             model_cfg = cfg.model
             model_label = f"Frozen {cfg.model.backbone}"
-        case "lora":
-            raise NotImplementedError("LoRA evaluation is not implemented yet")
         case mode:
             raise ValueError(f"Unsupported evaluation mode: {mode}")
 
