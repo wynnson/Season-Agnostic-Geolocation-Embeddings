@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from src.datasets.seasonet import SeasoNetDataset
-from src.models.season_agnostic_model import load_model
+from src.models.backbone import load_model
 from src.training.checkpoint import load_checkpoint, restore_training_state, save_checkpoint
 from src.training.losses.info_nce import InfoNCELoss
 from src.training.scheduler import build_scheduler
@@ -121,6 +121,7 @@ def main():
         projection_architecture=cfg.model.projection_head.architecture,
         weights=cfg.model.weights,
         lora_config=cfg.model.lora,
+        layer_mixer_config=cfg.model.layer_mixer,
     ).to(device)
 
     if cfg.optimizer.name != "adamw":

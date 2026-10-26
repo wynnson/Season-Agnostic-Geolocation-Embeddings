@@ -7,7 +7,8 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
 from src.datasets.seasonet import SeasoNetData
-from src.models.season_agnostic_model import SeasonAgnosticModel, preprocess_images
+from src.models.model import SeasonAgnosticModel
+from src.models.preprocessing import preprocess_images
 from src.training.evaluation import evaluate_cross_season_retrieval
 from src.training.schema import TrainingHistory, TrainingMetrics, ValidationMetrics
 

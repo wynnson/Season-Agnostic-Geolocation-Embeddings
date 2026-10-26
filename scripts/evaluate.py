@@ -12,11 +12,8 @@ from omegaconf import OmegaConf
 from torch.utils.data import DataLoader
 
 from src.datasets.seasonet import SeasoNetDataset
-from src.models.season_agnostic_model import (
-    embed_images,
-    load_frozen_backbone,
-    load_model,
-)
+from src.models.backbone import load_frozen_backbone, load_model
+from src.models.preprocessing import embed_images
 from src.training.checkpoint import load_checkpoint
 from src.training.evaluation import evaluate_cross_season_retrieval
 from src.utils.device import get_device
@@ -39,6 +36,7 @@ def load_trained_model(checkpoint_path: Path, device: torch.device):
         projection_architecture=train_cfg.model.projection_head.get("architecture", "mlp"),
         weights=train_cfg.model.weights,
         lora_config=train_cfg.model.get("lora"),
+        layer_mixer_config=train_cfg.model.layer_mixer,
     ).to(device)
     model.load_state_dict(checkpoint.model_state_dict)
     model.eval()

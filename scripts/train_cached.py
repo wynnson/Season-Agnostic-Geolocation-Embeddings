@@ -21,15 +21,16 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm.auto import tqdm
 
 from src.datasets.seasonet import SeasoNetDataset
-from src.models.season_agnostic_model import load_model
+from src.models.backbone import load_model
 from src.training.checkpoint import load_checkpoint, restore_training_state, save_checkpoint
 from src.preprocessing.schema import Pairs
 from src.training.evaluation import retrieval_recall_at_k
 from src.training.feature_cache import (
     embed_features,
-    feature_cache_path,
     forward_heads,
-    load_feature_cache,
+    intermediate_feature_cache_path,
+    load_intermediate_feature_cache,
+    SEASONS,
 )
 from src.training.losses.info_nce import InfoNCELoss
 from src.training.scheduler import build_scheduler
@@ -89,8 +90,16 @@ def build_hard_negative_index(
 @torch.inference_mode()
 def validate(model, summer: torch.Tensor, snow: torch.Tensor, chunk_size: int) -> ValidationMetrics:
     model.eval()
-    summer_embeddings = embed_features(model, summer)
-    snow_embeddings = embed_features(model, snow)
+
+    def embed_in_batches(features: torch.Tensor) -> torch.Tensor:
+        device = next(model.parameters()).device
+        return torch.cat([
+            embed_features(model, features[start:start + chunk_size].to(device))
+            for start in range(0, len(features), chunk_size)
+        ])
+
+    summer_embeddings = embed_in_batches(summer)
+    snow_embeddings = embed_in_batches(snow)
     return ValidationMetrics(
         summer_to_snow=retrieval_recall_at_k(summer_embeddings, snow_embeddings, chunk_size=chunk_size),
         snow_to_summer=retrieval_recall_at_k(snow_embeddings, summer_embeddings, chunk_size=chunk_size),
@@ -110,23 +119,23 @@ def train_one_epoch(
     generator: torch.Generator,
 ) -> TrainingMetrics:
     model.train()
-    device = summer.device
-    order = torch.randperm(len(summer), generator=generator).to(device)
+    device = next(model.parameters()).device
+    order = torch.randperm(len(summer), generator=generator)
     num_batches = len(order) // batch_size  # drop_last, as in scripts/train.py
 
     totals = torch.zeros(6, device=device)
     progress = tqdm(range(num_batches), desc="Cached training", unit="batch", leave=False)
     for b in progress:
         idx = order[b * batch_size:(b + 1) * batch_size]
-        summer_embeddings, summer_logits = forward_heads(model, summer[idx], grl_scale)
-        snow_embeddings, snow_logits = forward_heads(model, snow[idx], grl_scale)
+        summer_embeddings, summer_logits = forward_heads(model, summer[idx].to(device), grl_scale)
+        snow_embeddings, snow_logits = forward_heads(model, snow[idx].to(device), grl_scale)
         if negative_index is None:
             summer_negative_embeddings = None
             snow_negative_embeddings = None
         else:
             negatives = negative_index[idx]
-            summer_negative_embeddings = embed_features(model, summer[negatives])
-            snow_negative_embeddings = embed_features(model, snow[negatives])
+            summer_negative_embeddings = embed_features(model, summer[negatives].to(device))
+            snow_negative_embeddings = embed_features(model, snow[negatives].to(device))
 
         contrastive_loss = (
             criterion(summer_embeddings, snow_embeddings, snow_negative_embeddings)
@@ -182,6 +191,8 @@ def main():
     checkpoint_config = OmegaConf.to_container(cfg, resolve=True)
     if cfg.model.tuning != "frozen":
         raise ValueError("Cached features are only valid with model.tuning: frozen")
+    if not cfg.model.layer_mixer.enabled:
+        raise ValueError("Cached intermediate features require model.layer_mixer.enabled: true")
 
     torch.manual_seed(cfg.seed)
     generator = torch.Generator().manual_seed(cfg.seed)
@@ -193,20 +204,25 @@ def main():
     pairs = pd.read_parquet(REPO_DIR / manifest.pairs_path)
     hard_negatives = pd.read_parquet(REPO_DIR / manifest.hard_negatives_path)
 
-    cache = load_feature_cache(
-        feature_cache_path(artifacts_dir, cfg.model.backbone, Path(manifest.pairs_path)),
+    layers = list(cfg.model.layer_mixer.layers)
+    cache = load_intermediate_feature_cache(
+        intermediate_feature_cache_path(
+            artifacts_dir,
+            cfg.model.backbone,
+            layers,
+            Path(manifest.pairs_path),
+        ),
         pairs,
+        layers,
     )
 
     device = get_device()
-    train_features = {s: cache["splits"]["train"][s].to(device) for s in ("summer", "snow")}
-    val_features = {s: cache["splits"]["val"][s].to(device) for s in ("summer", "snow")}
+    # The 2.4 GB intermediate cache stays CPU-backed; batches move to the accelerator on demand.
+    train_features = {season: cache["splits"]["train"][season] for season in SEASONS}
+    val_features = {season: cache["splits"]["val"][season] for season in SEASONS}
     negative_index = build_hard_negative_index(
         pairs, hard_negatives, data_dir, cfg.training.sampled_hard_negatives_per_anchor
     )
-    if negative_index is not None:
-        negative_index = negative_index.to(device)
-
     # Full model (with the frozen backbone) so checkpoints load in evaluate.py and train.py.
     model = load_model(
         model_name=cfg.model.backbone,
@@ -218,6 +234,7 @@ def main():
         season_classes=cfg.model.season_classifier.num_classes,
         projection_architecture=cfg.model.projection_head.architecture,
         weights=cfg.model.weights,
+        layer_mixer_config=cfg.model.layer_mixer,
     ).to(device)
     optimizer = torch.optim.AdamW(
         [p for p in model.parameters() if p.requires_grad],
@@ -286,6 +303,9 @@ def main():
                 (VALIDATION_RETRIEVAL_SNOW_TO_SUMMER_RECALL_AT_5, validation_metrics.snow_to_summer[RECALL_AT_5]),
             ]:
                 writer.add_scalar(tag, value, epoch)
+
+            for layer, weight in zip(model.layer_mixer.layers, model.layer_mixer.weights()):
+                writer.add_scalar(f"layer_mixer/weight_{layer}", weight.item(), epoch)
 
             print(
                 f"Epoch {epoch}/{cfg.training.epochs} "
