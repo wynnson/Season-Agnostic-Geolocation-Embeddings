@@ -24,6 +24,86 @@ Requires [uv](https://docs.astral.sh/uv/).
 uv sync
 ```
 
+## PACE GPU
+
+From the local repository root, set `REMOTE` to the PACE login host and destination directory. Create the destination directory first if needed.
+
+```bash
+REMOTE='username@login-host:/path/to/Season-Agnostic-Geolocation-Embeddings/'
+ssh username@login-host 'mkdir -p /path/to/Season-Agnostic-Geolocation-Embeddings'
+```
+
+Sync the code, excluding local data and generated artifacts:
+
+```bash
+rsync -avh --progress \
+  --exclude '.git/' \
+  --exclude '.venv/' \
+  --exclude '__pycache__/' \
+  --exclude '.env' \
+  --exclude 'data/' \
+  --exclude 'artifacts/' \
+  ./ \
+  "$REMOTE"
+```
+
+After changing the Slurm job script or training configuration, sync only the changed files:
+
+```bash
+rsync -avh scripts/train_patch_attention.sbatch \
+  "$REMOTE"scripts/
+
+rsync -avh config/train_config.yaml \
+  "$REMOTE"config/
+```
+
+Sync the filtered train/validation data bundle:
+
+```bash
+rsync -avh --progress \
+  artifacts/cluster_bundle/ \
+  "$REMOTE"
+```
+
+Sync any cached weights. `--partial --inplace` retains partial progress when the transfer is interrupted and works with the older `rsync` shipped by macOS:
+
+```bash
+rsync -avh --progress --partial --inplace \
+  artifacts/patch_features_dinov3_vits16_pairs_clouds50_block10km_buffer2000m.pt \  # replace with your cache path
+  "$REMOTE"artifacts/
+```
+
+Sync the DINOv3 weights:
+
+```bash
+rsync -avh --progress \
+  artifacts/weights/ \
+  "$REMOTE"artifacts/weights/
+```
+
+On PACE, run this on an allocated GPU node:
+
+```bash
+module load uv/0.9.17
+module load cuda/12.9.1
+uv sync --locked --no-default-groups --group nvidia
+uv run --no-sync python -c "import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name())"
+```
+
+Submit the patch-attention training job:
+
+```bash
+sbatch scripts/train_patch_attention.sbatch
+squeue -u "$USER"
+```
+
+Follow the running job's training output and errors, replacing `<job-id>` with the ID returned by `sbatch`:
+
+```bash
+tail -f slurm-patch-attn-<job-id>.out
+tail -f slurm-patch-attn-<job-id>.err
+```
+
 ## Scripts
 
 Create geographic split, hard-negative, and manifest artifacts:

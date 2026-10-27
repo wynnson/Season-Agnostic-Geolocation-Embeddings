@@ -15,10 +15,50 @@ dependencies = [
     "scipy",
     "tensorboard",
     "tifffile",
-    "torch",
     "omegaconf",
     "tqdm",
-    "torchvision",
     "torchmetrics>=1.9.0",
     "termcolor>=3.3.0",
 ]
+
+[dependency-groups]
+cpu = [
+    "torch",
+    "torchvision",
+]
+
+nvidia = [
+    "torch",
+    "torchvision",
+]
+
+[tool.uv]
+default-groups = ["cpu"]
+
+conflicts = [
+    [
+        { group = "cpu" },
+        { group = "nvidia" },
+    ],
+]
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", group = "cpu", marker = "sys_platform == 'linux'" },
+    { index = "pytorch-cu129", group = "nvidia" },
+]
+
+torchvision = [
+    { index = "pytorch-cpu", group = "cpu", marker = "sys_platform == 'linux'" },
+    { index = "pytorch-cu129", group = "nvidia" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu129"
+url = "https://download.pytorch.org/whl/cu129"
+explicit = true
