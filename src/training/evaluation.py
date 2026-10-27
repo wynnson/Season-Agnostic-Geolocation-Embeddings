@@ -4,6 +4,11 @@ from collections.abc import Callable
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 
+from src.training.patch_reranking import (
+    recall_at_k_from_candidates,
+    rerank_patch_candidates,
+    retrieve_top_candidates,
+)
 from src.training.schema import ValidationMetrics
 
 
@@ -72,6 +77,34 @@ def build_embeddings_list(
     return summer_embeddings, snow_embeddings
 
 
+def build_embeddings_and_patch_tokens(
+    embed_fn: Callable[[torch.Tensor], torch.Tensor],
+    patch_embed_fn: Callable[[torch.Tensor], torch.Tensor],
+    data_loader: DataLoader,
+    log_every: int,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    summer_embeddings, snow_embeddings = [], []
+    summer_patches, snow_patches = [], []
+    processed_counter = 0
+
+    for batch_index, batch in enumerate(data_loader, start=1):
+        summer_embeddings.append(embed_fn(batch.anchor))
+        snow_embeddings.append(embed_fn(batch.positive))
+        summer_patches.append(patch_embed_fn(batch.anchor).to(device="cpu", dtype=torch.float16))
+        snow_patches.append(patch_embed_fn(batch.positive).to(device="cpu", dtype=torch.float16))
+        processed_counter += len(batch.loc_id)
+
+        if batch_index % log_every == 0 or batch_index == len(data_loader):
+            print(f"Embedded {processed_counter:,}/{len(data_loader.dataset):,} evaluation pairs", flush=True)
+
+    return (
+        torch.cat(summer_embeddings),
+        torch.cat(snow_embeddings),
+        torch.cat(summer_patches),
+        torch.cat(snow_patches),
+    )
+
+
 @torch.inference_mode()
 def evaluate_cross_season_retrieval(
     data_loader: DataLoader,
@@ -91,5 +124,60 @@ def evaluate_cross_season_retrieval(
             queries=snow_embeddings,
             gallery=summer_embeddings,
             chunk_size=chunk_size,
+        ),
+    )
+
+
+@torch.inference_mode()
+def evaluate_patch_reranked_retrieval(
+    summer_embeddings: torch.Tensor,
+    snow_embeddings: torch.Tensor,
+    summer_patches: torch.Tensor,
+    snow_patches: torch.Tensor,
+    top_k: int,
+    alpha: float,
+    retrieval_chunk_size: int,
+    reranking_batch_size: int,
+    candidate_batch_size: int,
+) -> tuple[ValidationMetrics, ValidationMetrics]:
+    if top_k < 5:
+        raise ValueError("Patch reranking requires top_k to be at least 5")
+
+    def rerank(
+        queries: torch.Tensor,
+        gallery: torch.Tensor,
+        query_patches: torch.Tensor,
+        gallery_patches: torch.Tensor,
+    ) -> tuple[dict[str, float], dict[str, float]]:
+        global_scores, candidate_indices = retrieve_top_candidates(
+            queries, gallery, top_k, retrieval_chunk_size
+        )
+        global_candidate_recall = recall_at_k_from_candidates(candidate_indices, (1, 5, top_k))
+        _, reranked_indices = rerank_patch_candidates(
+            global_scores,
+            candidate_indices,
+            query_patches,
+            gallery_patches,
+            alpha,
+            reranking_batch_size,
+            candidate_batch_size,
+        )
+        reranked_recall = recall_at_k_from_candidates(reranked_indices, (1, 5))
+        return reranked_recall, global_candidate_recall
+
+    reranked_summer_to_snow, global_candidate_summer_to_snow = rerank(
+        summer_embeddings, snow_embeddings, summer_patches, snow_patches
+    )
+    reranked_snow_to_summer, global_candidate_snow_to_summer = rerank(
+        snow_embeddings, summer_embeddings, snow_patches, summer_patches
+    )
+    return (
+        ValidationMetrics(
+            summer_to_snow=reranked_summer_to_snow,
+            snow_to_summer=reranked_snow_to_summer,
+        ),
+        ValidationMetrics(
+            summer_to_snow=global_candidate_summer_to_snow,
+            snow_to_summer=global_candidate_snow_to_summer,
         ),
     )

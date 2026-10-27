@@ -4,7 +4,7 @@ from torch.nn import functional as F
 
 from src.models.gradient_reversal import gradient_reverse
 from src.models.heads import build_projection_head
-from src.models.layer_mixer import LayerMixer
+from src.models.patch_attention import PatchAttentionPool
 
 
 class SeasonAgnosticModel(nn.Module):
@@ -16,7 +16,7 @@ class SeasonAgnosticModel(nn.Module):
         projection_dropout: float,
         season_classes: int,
         projection_architecture: str = "mlp",
-        layer_mixer_config=None,
+        patch_attention_config=None,
     ):
         super().__init__()
         self.backbone = backbone
@@ -33,48 +33,77 @@ class SeasonAgnosticModel(nn.Module):
             projection_architecture,
         )
         self.season_classifier = nn.Linear(embedding_dim, season_classes)
-        self.layer_mixer = self._build_layer_mixer(layer_mixer_config)
+        self.patch_attention = self._build_patch_attention(patch_attention_config, backbone_dim)
         self.backbone_frozen = False
 
     @staticmethod
-    def _build_layer_mixer(layer_mixer_config) -> LayerMixer | None:
-        if layer_mixer_config is None or not layer_mixer_config.enabled:
+    def _build_patch_attention(
+        patch_attention_config,
+        backbone_dim: int,
+    ) -> PatchAttentionPool | None:
+        if patch_attention_config is None or not patch_attention_config.enabled:
             return None
-        return LayerMixer(list(layer_mixer_config.layers))
-
-    def mix_features(self, features: torch.Tensor) -> torch.Tensor:
-        if self.layer_mixer is None:
-            return features
-        return self.layer_mixer(features)
-
-    def _backbone_features(self, images: torch.Tensor) -> torch.Tensor:
-        if self.layer_mixer is None:
-            return self.backbone(images)
-        if not hasattr(self.backbone, "get_intermediate_layers"):
-            raise ValueError("Layer mixing requires a backbone with get_intermediate_layers")
-
-        outputs = self.backbone.get_intermediate_layers(
-            images,
-            n=list(self.layer_mixer.layers),
-            return_class_token=True,
+        return PatchAttentionPool(
+            embedding_dim=backbone_dim,
+            hidden_dim=patch_attention_config.hidden_dim,
+            residual_scale_initialization=patch_attention_config.residual_scale_initialization,
         )
-        features = torch.stack([class_token for _, class_token in outputs], dim=-2)
-        return self.mix_features(features)
+
+    def embed_features(
+        self,
+        cls_features: torch.Tensor,
+        patch_features: torch.Tensor | None = None,
+        return_attention: bool = False,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor | None]:
+        attention = None
+        if self.patch_attention is not None:
+            if patch_features is None:
+                raise ValueError("Patch attention requires patch features")
+            cls_features, attention = self.patch_attention(cls_features, patch_features)
+
+        embedding = F.normalize(self.projection_head(cls_features), dim=-1)
+        if return_attention:
+            return embedding, attention
+        return embedding
+
+    def forward_feature_training(
+        self,
+        cls_features: torch.Tensor,
+        patch_features: torch.Tensor | None,
+        grl_scale: float,
+        return_attention: bool = False,
+    ) -> tuple[torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
+        embedding, attention = self.embed_features(
+            cls_features,
+            patch_features,
+            return_attention=True,
+        )
+        season_logits = self.season_classifier(gradient_reverse(embedding, grl_scale))
+        if return_attention:
+            return embedding, season_logits, attention
+        return embedding, season_logits
+
+    def _backbone_features(self, images: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor | None]:
+        if self.patch_attention is None:
+            return self.backbone(images), None
+        if not hasattr(self.backbone, "forward_features"):
+            raise ValueError("Patch attention requires a backbone with forward_features")
+
+        features = self.backbone.forward_features(images)
+        try:
+            return features["x_norm_clstoken"], features["x_norm_patchtokens"]
+        except KeyError as error:
+            raise ValueError("Backbone forward_features must return CLS and patch tokens") from error
 
     def forward_embeddings(self, images: torch.Tensor) -> torch.Tensor:
-        features = self._backbone_features(images)
-        embedding = self.projection_head(features)
-        return F.normalize(embedding, dim=1)
+        cls_features, patch_features = self._backbone_features(images)
+        return self.embed_features(cls_features, patch_features)
 
     def forward_training(
         self, images: torch.Tensor, grl_scale: float
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        features = self._backbone_features(images)
-        embedding = self.projection_head(features)
-        normalized_out = F.normalize(embedding, dim=1)
-        season_features = gradient_reverse(normalized_out, grl_scale)
-        season_logits = self.season_classifier(season_features)
-        return normalized_out, season_logits
+        cls_features, patch_features = self._backbone_features(images)
+        return self.forward_feature_training(cls_features, patch_features, grl_scale)
 
     def freeze_backbone(self) -> None:
         self.backbone_frozen = True

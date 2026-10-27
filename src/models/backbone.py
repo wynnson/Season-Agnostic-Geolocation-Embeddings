@@ -31,7 +31,7 @@ def load_model(
     projection_architecture: str = "mlp",
     weights: str | Path | None = None,
     lora_config=None,
-    layer_mixer_config=None,
+    patch_attention_config=None,
 ) -> SeasonAgnosticModel:
     backbone = load_backbone(model_name, repository, weights)
     model = SeasonAgnosticModel(
@@ -41,7 +41,7 @@ def load_model(
         projection_dropout=projection_dropout,
         season_classes=season_classes,
         projection_architecture=projection_architecture,
-        layer_mixer_config=layer_mixer_config,
+        patch_attention_config=patch_attention_config,
     )
 
     if tuning == "frozen":

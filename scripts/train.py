@@ -121,7 +121,7 @@ def main():
         projection_architecture=cfg.model.projection_head.architecture,
         weights=cfg.model.weights,
         lora_config=cfg.model.lora,
-        layer_mixer_config=cfg.model.layer_mixer,
+        patch_attention_config=cfg.model.patch_attention,
     ).to(device)
 
     if cfg.optimizer.name != "adamw":
@@ -171,6 +171,7 @@ def main():
         mean=tuple(cfg.model.normalization.mean),
         std=tuple(cfg.model.normalization.std),
         season_loss_weight=cfg.training.season_loss_weight,
+        attention_consistency_weight=cfg.training.attention_consistency_weight,
         grl_scale=cfg.training.grl_scale,
         contrastive_criterion=InfoNCELoss(cfg.training.temperature),
         retrieval_chunk_size=cfg.training.retrieval_chunk_size,
@@ -195,6 +196,7 @@ def main():
             (TRAIN_TOTAL_LOSS, train_metrics.total_loss),
             (TRAIN_CONTRASTIVE_HEAD_LOSS, train_metrics.contrastive_loss),
             (TRAIN_SEASON_CLASSIFIER_LOSS, train_metrics.season_loss),
+            ("train/patch_attention/consistency_loss", train_metrics.attention_consistency_loss),
             (TRAIN_SEASON_CLASSIFIER_ACCURACY, train_metrics.season_classifier_accuracy),
             (TRAIN_SUMMER_CLASSIFIER_ACCURACY, train_metrics.summer_classifier_accuracy),
             (TRAIN_SNOW_CLASSIFIER_ACCURACY, train_metrics.snow_classifier_accuracy),

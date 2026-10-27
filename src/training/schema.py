@@ -28,6 +28,7 @@ class TrainingMetrics:
     total_loss: float
     contrastive_loss: float
     season_loss: float
+    attention_consistency_loss: float = 0.0
     season_classifier_accuracy: float = float("nan")
     summer_classifier_accuracy: float = float("nan")
     snow_classifier_accuracy: float = float("nan")
