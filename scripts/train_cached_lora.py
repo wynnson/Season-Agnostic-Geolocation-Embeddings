@@ -23,10 +23,11 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm.auto import tqdm
 
 from scripts.train_cached import build_hard_negative_index
-from src.models.backbone import first_lora_block, forward_from_block, load_model
+from src.models.backbone import features_from_block, first_lora_block, load_model
 from src.models.gradient_reversal import gradient_reverse
 from src.training.checkpoint import load_checkpoint, restore_training_state, save_checkpoint
 from src.training.evaluation import retrieval_recall_at_k
+from src.training.losses.attention import symmetric_js_divergence
 from src.training.losses.info_nce import InfoNCELoss
 from src.training.scheduler import build_scheduler
 from src.training.schema import (
@@ -59,9 +60,12 @@ def parse_args() -> tuple[argparse.Namespace, list[str]]:
     return parser.parse_known_args()
 
 
-def embed_tokens(model, tokens: torch.Tensor, block: int) -> torch.Tensor:
+def embed_tokens(model, tokens: torch.Tensor, block: int, return_attention: bool = False):
     # Mirrors SeasonAgnosticModel.forward_embeddings from `block` on.
-    return F.normalize(model.projection_head(forward_from_block(model.backbone, tokens, block)), dim=-1)
+    cls_features, patch_features = features_from_block(model.backbone, tokens, block)
+    if model.patch_attention is None:
+        cls_features, patch_features = model.backbone.head(cls_features), None
+    return model.embed_features(cls_features, patch_features, return_attention=return_attention)
 
 
 @torch.inference_mode()
@@ -93,6 +97,7 @@ def train_one_epoch(
     block: int,
     batch_size: int,
     season_loss_weight: float,
+    attention_consistency_weight: float,
     grl_scale: float,
     generator: torch.Generator,
 ) -> TrainingMetrics:
@@ -103,15 +108,25 @@ def train_one_epoch(
     order = torch.randperm(len(summer), generator=generator)
     num_batches = len(order) // batch_size  # drop_last, as in scripts/train.py
 
-    totals = torch.zeros(6, device=device)
+    totals = torch.zeros(7, device=device)
     progress = tqdm(range(num_batches), desc="Cached LoRA training", unit="batch", leave=False)
     for b in progress:
         idx = order[b * batch_size:(b + 1) * batch_size]
         rows = idx if negative_index is None else torch.cat((idx, negative_index[idx].flatten()))
         # Anchors and their hard negatives share one pass through the trainable blocks.
-        summer_all = embed_tokens(model, gather_tokens(summer, rows).to(device), block)
-        snow_all = embed_tokens(model, gather_tokens(snow, rows).to(device), block)
+        summer_all, summer_attention = embed_tokens(
+            model, gather_tokens(summer, rows).to(device), block, return_attention=True
+        )
+        snow_all, snow_attention = embed_tokens(
+            model, gather_tokens(snow, rows).to(device), block, return_attention=True
+        )
         summer_embeddings, snow_embeddings = summer_all[:batch_size], snow_all[:batch_size]
+        if summer_attention is None:
+            attention_consistency_loss = torch.zeros((), device=device)
+        else:
+            attention_consistency_loss = symmetric_js_divergence(
+                summer_attention[:batch_size], snow_attention[:batch_size]
+            )
         if negative_index is None:
             summer_negative_embeddings = None
             snow_negative_embeddings = None
@@ -136,7 +151,11 @@ def train_one_epoch(
         season_classifier_accuracy = (season_predictions == season_labels).float().mean()
         summer_classifier_accuracy = (season_predictions[:batch_size] == 0).float().mean()
         snow_classifier_accuracy = (season_predictions[batch_size:] == 1).float().mean()
-        total_loss = contrastive_loss + season_loss_weight * season_loss
+        total_loss = (
+            contrastive_loss
+            + season_loss_weight * season_loss
+            + attention_consistency_weight * attention_consistency_loss
+        )
 
         optimizer.zero_grad(set_to_none=True)
         total_loss.backward()
@@ -146,6 +165,7 @@ def train_one_epoch(
             total_loss,
             contrastive_loss,
             season_loss,
+            attention_consistency_loss,
             season_classifier_accuracy,
             summer_classifier_accuracy,
             snow_classifier_accuracy,
@@ -155,11 +175,14 @@ def train_one_epoch(
             season=f"{season_loss.item():.4f}",
         )
 
-    total, contrastive, season, classifier, summer_accuracy, snow_accuracy = (totals / num_batches).tolist()
+    total, contrastive, season, attention, classifier, summer_accuracy, snow_accuracy = (
+        totals / num_batches
+    ).tolist()
     return TrainingMetrics(
         total_loss=total,
         contrastive_loss=contrastive,
         season_loss=season,
+        attention_consistency_loss=attention,
         season_classifier_accuracy=classifier,
         summer_classifier_accuracy=summer_accuracy,
         snow_classifier_accuracy=snow_accuracy,
@@ -175,8 +198,7 @@ def main():
     checkpoint_config = OmegaConf.to_container(cfg, resolve=True)
     if cfg.model.tuning not in ("frozen", "lora"):
         raise ValueError("Cached tokens are only valid with model.tuning: frozen or lora")
-    if cfg.model.layer_mixer.enabled:
-        raise ValueError("Cached tokens yield only the final CLS token; set model.layer_mixer.enabled: false")
+    patch_attention_enabled = cfg.model.patch_attention.enabled
 
     torch.manual_seed(cfg.seed)
     generator = torch.Generator().manual_seed(cfg.seed)
@@ -212,7 +234,7 @@ def main():
         projection_architecture=cfg.model.projection_head.architecture,
         weights=cfg.model.weights,
         lora_config=cfg.model.lora,
-        layer_mixer_config=cfg.model.layer_mixer,
+        patch_attention_config=cfg.model.patch_attention if patch_attention_enabled else None,
     ).to(device)
     optimizer = torch.optim.AdamW(
         [p for p in model.parameters() if p.requires_grad],
@@ -255,6 +277,7 @@ def main():
                 tokens["train"]["summer"], tokens["train"]["snow"], negative_index, block,
                 batch_size=cfg.training.batch_size,
                 season_loss_weight=cfg.training.season_loss_weight,
+                attention_consistency_weight=cfg.training.attention_consistency_weight,
                 grl_scale=cfg.training.grl_scale,
                 generator=generator,
             )
@@ -270,6 +293,7 @@ def main():
                 (TRAIN_TOTAL_LOSS, train_metrics.total_loss),
                 (TRAIN_CONTRASTIVE_HEAD_LOSS, train_metrics.contrastive_loss),
                 (TRAIN_SEASON_CLASSIFIER_LOSS, train_metrics.season_loss),
+                ("train/patch_attention/consistency_loss", train_metrics.attention_consistency_loss),
                 (TRAIN_SEASON_CLASSIFIER_ACCURACY, train_metrics.season_classifier_accuracy),
                 (TRAIN_SUMMER_CLASSIFIER_ACCURACY, train_metrics.summer_classifier_accuracy),
                 (TRAIN_SNOW_CLASSIFIER_ACCURACY, train_metrics.snow_classifier_accuracy),
@@ -281,6 +305,8 @@ def main():
                 (VALIDATION_RETRIEVAL_SNOW_TO_SUMMER_RECALL_AT_5, validation_metrics.snow_to_summer[RECALL_AT_5]),
             ]:
                 writer.add_scalar(tag, value, epoch)
+            if patch_attention_enabled:
+                writer.add_scalar("patch_attention/residual_scale", model.patch_attention.residual_scale.item(), epoch)
 
             print(
                 f"Epoch {epoch}/{cfg.training.epochs} "

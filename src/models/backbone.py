@@ -88,14 +88,17 @@ def tokens_before_block(backbone: nn.Module, images: torch.Tensor, block: int) -
     return tokens
 
 
-def forward_from_block(backbone: nn.Module, tokens: torch.Tensor, block: int) -> torch.Tensor:
-    # Mirrors DINOv3's forward from `block` on: remaining blocks, CLS norm, head.
-    side = math.isqrt(tokens.shape[1] - 1 - backbone.n_storage_tokens)
+def features_from_block(
+    backbone: nn.Module, tokens: torch.Tensor, block: int
+) -> tuple[torch.Tensor, torch.Tensor]:
+    # Mirrors DINOv3's forward_features from `block` on; returns x_norm_clstoken and x_norm_patchtokens.
+    first_patch = 1 + backbone.n_storage_tokens
+    side = math.isqrt(tokens.shape[1] - first_patch)
     rope = _rope(backbone, side, side)
     for layer in backbone.blocks[block:]:
         tokens = layer(tokens, rope)
-    norm = backbone.norm if backbone.cls_norm is None else backbone.cls_norm
-    return backbone.head(norm(tokens[:, 0]))
+    cls_norm = backbone.norm if backbone.cls_norm is None else backbone.cls_norm
+    return cls_norm(tokens[:, 0]), backbone.norm(tokens[:, first_patch:])
 
 
 def load_frozen_backbone(
