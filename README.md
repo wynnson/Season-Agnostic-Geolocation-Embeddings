@@ -163,6 +163,13 @@ uv run python scripts/extract_tokens.py
 uv run python scripts/train_cached_lora.py model.tuning=lora
 ```
 
+Plot last-block CLS self-attention for trained checkpoints on one location, with the summer/snow attention-map correlation (example output in `figures/`):
+
+```bash
+uv run python scripts/plot_cls_attention.py <loc_id> figures/<name>.png \
+  --run "Frozen=artifacts/checkpoints/<frozen>_best.pt" --run "LoRA=artifacts/checkpoints/<lora>_best.pt"
+```
+
 Use the same model architecture and scheduler configuration when resuming. To extend a completed cosine-scheduled run, start a new fine-tuning phase with an explicitly chosen scheduler rather than resuming its final checkpoint.
 
 Checkpoints are saved as `<run_name>_best.pt` and `<run_name>_last.pt` under `artifacts/checkpoints`. Set `checkpoint.run_name` in `config/train_config.yaml` for each independent run. View training metrics with:
