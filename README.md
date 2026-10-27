@@ -76,6 +76,13 @@ Resume interrupted cached-feature training from its last checkpoint:
 uv run python scripts/train_cached.py --resume artifacts/checkpoints/<run_name>_last.pt
 ```
 
+Train LoRA on cached DINOv3 tokens. The cache holds the tokens entering the first block in `model.lora.target_modules` (~17 GB for block 10), so only the LoRA blocks and heads run during training. `model.tuning=frozen` uses the same cache for a matched frozen baseline:
+
+```bash
+uv run python scripts/extract_tokens.py
+uv run python scripts/train_cached_lora.py model.layer_mixer.enabled=false model.tuning=lora
+```
+
 Use the same model architecture and scheduler configuration when resuming. To extend a completed cosine-scheduled run, start a new fine-tuning phase with an explicitly chosen scheduler rather than resuming its final checkpoint.
 
 Checkpoints are saved as `<run_name>_best.pt` and `<run_name>_last.pt` under `artifacts/checkpoints`. Set `checkpoint.run_name` in `config/train_config.yaml` for each independent run. View training metrics with:
