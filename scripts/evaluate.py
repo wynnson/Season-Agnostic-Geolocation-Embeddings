@@ -68,9 +68,9 @@ def main():
     data_dir = (REPO_DIR / cfg.data.data_dir).resolve()
     pairs = pd.read_parquet(REPO_DIR / artifact_manifest.pairs_path)
 
-    val_dataset = SeasoNetDataset(pairs, split="val", data_dir=data_dir)
-    val_loader = DataLoader(
-        val_dataset,
+    test_dataset = SeasoNetDataset(pairs, split="test", data_dir=data_dir)
+    test_loader = DataLoader(
+        test_dataset,
         batch_size=cfg.evaluation.batch_size,
         shuffle=False,
         num_workers=cfg.data.num_workers,
@@ -115,7 +115,7 @@ def main():
 
     if cfg.evaluation.patch_reranking.enabled:
         embeddings_and_patches = build_embeddings_and_patch_tokens(
-            embed_fn, patch_embed_fn, val_loader, cfg.logging.log_every
+            embed_fn, patch_embed_fn, test_loader, cfg.logging.log_every
         )
         metrics, candidate_metrics = evaluate_patch_reranked_retrieval(
             *embeddings_and_patches,
@@ -127,14 +127,14 @@ def main():
         )
     else:
         metrics = evaluate_cross_season_retrieval(
-            val_loader,
+            test_loader,
             embed_fn=embed_fn,
             chunk_size=cfg.evaluation.retrieval_chunk_size,
             log_every=cfg.logging.log_every,
         )
         candidate_metrics = None
 
-    print(f"{model_label} evaluation on geographic validation split ({len(val_dataset):,} pairs)")
+    print(f"{model_label} evaluation on geographic test split ({len(test_dataset):,} pairs)")
     print("Summer -> Snow:", metrics.summer_to_snow)
     print("Snow -> Summer:", metrics.snow_to_summer)
     if candidate_metrics is not None:

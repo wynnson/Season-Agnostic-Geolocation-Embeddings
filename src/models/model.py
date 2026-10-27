@@ -95,9 +95,17 @@ class SeasonAgnosticModel(nn.Module):
         except KeyError as error:
             raise ValueError("Backbone forward_features must return CLS and patch tokens") from error
 
-    def forward_embeddings(self, images: torch.Tensor) -> torch.Tensor:
+    def forward_embeddings(
+        self,
+        images: torch.Tensor,
+        return_attention: bool = False,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor | None]:
         cls_features, patch_features = self._backbone_features(images)
-        return self.embed_features(cls_features, patch_features)
+        return self.embed_features(
+            cls_features,
+            patch_features,
+            return_attention=return_attention,
+        )
 
     def forward_training(
         self, images: torch.Tensor, grl_scale: float

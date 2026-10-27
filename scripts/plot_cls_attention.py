@@ -1,10 +1,3 @@
-"""Plot last-block CLS-to-patch self-attention for trained checkpoints on one location.
-
-Also reports how well each model's summer and snow attention maps agree (Pearson r),
-for the plotted location and averaged over random validation locations. For example:
-    uv run python scripts/plot_cls_attention.py 1_11.524806_49.339061 figures/cls_attention.png \
-        --run "Frozen DINOv3=artifacts/checkpoints/frozen_best.pt" --run "LoRA=artifacts/checkpoints/lora_best.pt"
-"""
 import argparse
 from pathlib import Path
 import sys

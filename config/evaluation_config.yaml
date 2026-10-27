@@ -14,8 +14,8 @@ model:
     std: [0.229, 0.224, 0.225]
 
 evaluation:
-  mode: "trained"  # frozen, trained, lora
-  checkpoint_path: "artifacts/checkpoints/dinov3_vits16_geo_grl_w0.0_residual_hard_0_b256"
+  mode: "frozen"  # frozen, trained, lora
+  checkpoint_path: "artifacts/weights/dinov3_vits16_pretrain_lvd1689m-08c60483.pth"
   batch_size: 32
   retrieval_chunk_size: 512
   patch_reranking:
