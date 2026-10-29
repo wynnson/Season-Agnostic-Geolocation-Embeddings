@@ -29,7 +29,6 @@ from src.training.feature_cache import (
     load_patch_feature_cache,
     patch_feature_cache_path,
 )
-from src.training.losses.attention import symmetric_js_divergence
 from src.training.losses.info_nce import InfoNCELoss
 from src.training.scheduler import build_scheduler
 from src.training.schema import (
@@ -145,7 +144,6 @@ def train_one_epoch(
     negative_index: torch.Tensor | None,
     batch_size: int,
     season_loss_weight: float,
-    attention_consistency_weight: float,
     grl_scale: float,
     generator: torch.Generator,
 ) -> TrainingMetrics:
@@ -153,36 +151,27 @@ def train_one_epoch(
     device = next(model.parameters()).device
     order = torch.randperm(len(summer["cls"]), generator=generator)
     num_batches = len(order) // batch_size
-    totals = torch.zeros(7, device=device)
+    totals = torch.zeros(6, device=device)
     progress = tqdm(range(num_batches), desc="Cached training", unit="batch", leave=False)
 
     for batch_number in progress:
         indices = order[batch_number * batch_size:(batch_number + 1) * batch_size]
         summer_cls, summer_patches = batch_features(summer, indices, device)
         snow_cls, snow_patches = batch_features(snow, indices, device)
-        use_attention = model.patch_attention is not None
         summer_output = forward_heads(
             model,
             summer_cls,
             grl_scale,
             summer_patches,
-            return_attention=use_attention,
         )
         snow_output = forward_heads(
             model,
             snow_cls,
             grl_scale,
             snow_patches,
-            return_attention=use_attention,
         )
-        if use_attention:
-            summer_embeddings, summer_logits, summer_attention = summer_output
-            snow_embeddings, snow_logits, snow_attention = snow_output
-            attention_consistency_loss = symmetric_js_divergence(summer_attention, snow_attention)
-        else:
-            summer_embeddings, summer_logits = summer_output
-            snow_embeddings, snow_logits = snow_output
-            attention_consistency_loss = torch.zeros((), device=device)
+        summer_embeddings, summer_logits = summer_output
+        snow_embeddings, snow_logits = snow_output
 
         if negative_index is None:
             summer_negative_embeddings = None
@@ -209,7 +198,6 @@ def train_one_epoch(
         total_loss = (
             contrastive_loss
             + season_loss_weight * season_loss
-            + attention_consistency_weight * attention_consistency_loss
         )
 
         optimizer.zero_grad(set_to_none=True)
@@ -220,22 +208,19 @@ def train_one_epoch(
             total_loss,
             contrastive_loss,
             season_loss,
-            attention_consistency_loss,
             season_classifier_accuracy,
             summer_classifier_accuracy,
             snow_classifier_accuracy,
         )).detach()
         progress.set_postfix(
             contrastive=f"{contrastive_loss.item():.4f}",
-            attention=f"{attention_consistency_loss.item():.4f}",
         )
 
-    total, contrastive, season, attention, classifier, summer_accuracy, snow_accuracy = (totals / num_batches).tolist()
+    total, contrastive, season, classifier, summer_accuracy, snow_accuracy = (totals / num_batches).tolist()
     return TrainingMetrics(
         total_loss=total,
         contrastive_loss=contrastive,
         season_loss=season,
-        attention_consistency_loss=attention,
         season_classifier_accuracy=classifier,
         summer_classifier_accuracy=summer_accuracy,
         snow_classifier_accuracy=snow_accuracy,
@@ -332,7 +317,6 @@ def main() -> None:
                 negative_index,
                 cfg.training.batch_size,
                 cfg.training.season_loss_weight,
-                cfg.training.attention_consistency_weight,
                 cfg.training.grl_scale,
                 generator,
             )
@@ -350,7 +334,6 @@ def main() -> None:
                 (TRAIN_TOTAL_LOSS, train_metrics.total_loss),
                 (TRAIN_CONTRASTIVE_HEAD_LOSS, train_metrics.contrastive_loss),
                 (TRAIN_SEASON_CLASSIFIER_LOSS, train_metrics.season_loss),
-                ("train/patch_attention/consistency_loss", train_metrics.attention_consistency_loss),
                 (TRAIN_SEASON_CLASSIFIER_ACCURACY, train_metrics.season_classifier_accuracy),
                 (TRAIN_SUMMER_CLASSIFIER_ACCURACY, train_metrics.summer_classifier_accuracy),
                 (TRAIN_SNOW_CLASSIFIER_ACCURACY, train_metrics.snow_classifier_accuracy),
@@ -381,7 +364,6 @@ def main() -> None:
                 f"Epoch {epoch}/{cfg.training.epochs} "
                 f"loss={train_metrics.total_loss:.4f} "
                 f"contrastive={train_metrics.contrastive_loss:.4f} "
-                f"attention={train_metrics.attention_consistency_loss:.4f} "
                 f"mean_recall@1={validation_metrics.mean_recall_at_1:.4f}",
                 flush=True,
             )

@@ -9,18 +9,27 @@ import pandas as pd
 import torch
 
 from omegaconf import OmegaConf
+from torch import nn
 from torch.utils.data import DataLoader
 
 from src.datasets.seasonet import SeasoNetDataset
 from src.models.backbone import load_frozen_backbone, load_model
-from src.models.preprocessing import embed_images, extract_patch_tokens
+from src.models.preprocessing import embed_images
+from src.models.salad import SALADPool
 from src.training.checkpoint import load_checkpoint
-from src.training.evaluation import (
-    build_embeddings_and_patch_tokens,
-    evaluate_cross_season_retrieval,
-    evaluate_patch_reranked_retrieval,
-)
+from src.training.evaluation import evaluate_cross_season_retrieval
 from src.utils.device import get_device
+
+
+class SALADDescriptor(nn.Module):
+    def __init__(self, backbone: nn.Module, pool: SALADPool):
+        super().__init__()
+        self.backbone = backbone
+        self.pool = pool
+
+    def forward(self, images: torch.Tensor) -> torch.Tensor:
+        features = self.backbone.forward_features(images)
+        return self.pool(features["x_norm_clstoken"], features["x_norm_patchtokens"])
 
 
 def load_trained_model(checkpoint_path: Path, device: torch.device):
@@ -29,6 +38,27 @@ def load_trained_model(checkpoint_path: Path, device: torch.device):
 
     checkpoint = load_checkpoint(checkpoint_path, device)
     train_cfg = OmegaConf.create(checkpoint.config)
+    if "dustbin_score" in checkpoint.model_state_dict:
+        salad_cfg = train_cfg.model.salad
+        pool = SALADPool(
+            input_dim=checkpoint.model_state_dict["token_features.0.weight"].shape[1],
+            num_clusters=salad_cfg.num_clusters,
+            cluster_dim=salad_cfg.cluster_dim,
+            token_dim=salad_cfg.token_dim,
+            hidden_dim=salad_cfg.hidden_dim,
+            dropout=salad_cfg.dropout,
+            sinkhorn_iterations=salad_cfg.sinkhorn_iterations,
+        )
+        pool.load_state_dict(checkpoint.model_state_dict)
+        backbone = load_frozen_backbone(
+            train_cfg.model.backbone,
+            train_cfg.model.repository,
+            train_cfg.model.weights,
+        )
+        model = SALADDescriptor(backbone, pool).to(device)
+        model.eval()
+        return model, train_cfg.model
+
     model = load_model(
         model_name=train_cfg.model.backbone,
         repository=train_cfg.model.repository,
@@ -68,7 +98,11 @@ def main():
     data_dir = (REPO_DIR / cfg.data.data_dir).resolve()
     pairs = pd.read_parquet(REPO_DIR / artifact_manifest.pairs_path)
 
-    test_dataset = SeasoNetDataset(pairs, split="test", data_dir=data_dir)
+    test_dataset = SeasoNetDataset(
+        pairs,
+        split="test",
+        data_dir=data_dir,
+    )
     test_loader = DataLoader(
         test_dataset,
         batch_size=cfg.evaluation.batch_size,
@@ -82,7 +116,8 @@ def main():
         case "trained" | "lora":
             checkpoint_path = REPO_DIR / cfg.evaluation.checkpoint_path
             model, model_cfg = load_trained_model(checkpoint_path, device)
-            model_label = f"Trained season-agnostic model ({checkpoint_path.name})"
+            model_type = "SALAD descriptor" if isinstance(model, SALADDescriptor) else "Trained season-agnostic model"
+            model_label = f"{model_type} ({checkpoint_path.name})"
         case "frozen":
             model = load_frozen_backbone(
                 cfg.model.backbone,
@@ -104,42 +139,16 @@ def main():
             tuple(model_cfg.normalization.std),
         )
 
-    def patch_embed_fn(images: torch.Tensor) -> torch.Tensor:
-        return extract_patch_tokens(
-            model,
-            images.to(device),
-            model_cfg.image_size,
-            tuple(model_cfg.normalization.mean),
-            tuple(model_cfg.normalization.std),
-        )
-
-    if cfg.evaluation.patch_reranking.enabled:
-        embeddings_and_patches = build_embeddings_and_patch_tokens(
-            embed_fn, patch_embed_fn, test_loader, cfg.logging.log_every
-        )
-        metrics, candidate_metrics = evaluate_patch_reranked_retrieval(
-            *embeddings_and_patches,
-            top_k=cfg.evaluation.patch_reranking.top_k,
-            alpha=cfg.evaluation.patch_reranking.alpha,
-            retrieval_chunk_size=cfg.evaluation.retrieval_chunk_size,
-            reranking_batch_size=cfg.evaluation.patch_reranking.batch_size,
-            candidate_batch_size=cfg.evaluation.patch_reranking.candidate_batch_size,
-        )
-    else:
-        metrics = evaluate_cross_season_retrieval(
-            test_loader,
-            embed_fn=embed_fn,
-            chunk_size=cfg.evaluation.retrieval_chunk_size,
-            log_every=cfg.logging.log_every,
-        )
-        candidate_metrics = None
+    metrics = evaluate_cross_season_retrieval(
+        test_loader,
+        embed_fn=embed_fn,
+        chunk_size=cfg.evaluation.retrieval_chunk_size,
+        log_every=cfg.logging.log_every,
+    )
 
     print(f"{model_label} evaluation on geographic test split ({len(test_dataset):,} pairs)")
     print("Summer -> Snow:", metrics.summer_to_snow)
     print("Snow -> Summer:", metrics.snow_to_summer)
-    if candidate_metrics is not None:
-        print("Global top-k candidate recall, Summer -> Snow:", candidate_metrics.summer_to_snow)
-        print("Global top-k candidate recall, Snow -> Summer:", candidate_metrics.snow_to_summer)
 
 
 if __name__ == "__main__":

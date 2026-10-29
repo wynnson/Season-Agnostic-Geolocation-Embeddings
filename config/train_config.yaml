@@ -16,7 +16,7 @@ model:
     mean: [0.485, 0.456, 0.406]
     std: [0.229, 0.224, 0.225]
   projection_head:
-    architecture: "residual"  # mlp, residual
+    architecture: "residual"  # mlp, residual, identity
     hidden_dim: 768
     embedding_dim: 384
     dropout: 0.0
@@ -24,6 +24,14 @@ model:
     enabled: true
     hidden_dim: 128
     residual_scale_initialization: 0.001
+    num_regions: 1
+  salad:
+    num_clusters: 8
+    cluster_dim: 32
+    token_dim: 128
+    hidden_dim: 512
+    dropout: 0.0
+    sinkhorn_iterations: 3
   season_classifier:
     num_classes: 2
   lora:
@@ -44,7 +52,6 @@ training:
   weight_decay: 0.01
   temperature: 0.07
   season_loss_weight: 0
-  attention_consistency_weight: 0
   grl_scale: 0
   sampled_hard_negatives_per_anchor: 25
   retrieval_chunk_size: 512
@@ -60,7 +67,7 @@ scheduler:
 # Checkpointing
 checkpoint:
   output_dir: "artifacts/checkpoints"
-  run_name: "dinov3_vits16_patch_attention_frozen_residual_hard_50_b256_sw_.5_grl_2"
+  run_name: "dinov3_vits16_patch_attention_frozen_LORA_residual_hard_50_b256_sw_.5_grl_2"
 
 # Logging
 logging:

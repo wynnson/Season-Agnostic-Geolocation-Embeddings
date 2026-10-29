@@ -28,7 +28,6 @@ class TrainingMetrics:
     total_loss: float
     contrastive_loss: float
     season_loss: float
-    attention_consistency_loss: float = 0.0
     season_classifier_accuracy: float = float("nan")
     summer_classifier_accuracy: float = float("nan")
     snow_classifier_accuracy: float = float("nan")
@@ -69,12 +68,14 @@ class TrainingCheckpoint:
 
     @classmethod
     def from_dict(cls, checkpoint: dict[str, Any]) -> "TrainingCheckpoint":
+        train_metrics = dict(checkpoint["train_metrics"])
+        train_metrics.pop("attention_consistency_loss", None)
         return cls(
             epoch=checkpoint["epoch"],
             model_state_dict=checkpoint["model_state_dict"],
             optimizer_state_dict=checkpoint["optimizer_state_dict"],
             scheduler_state_dict=checkpoint.get("scheduler_state_dict"),
-            train_metrics=TrainingMetrics(**checkpoint["train_metrics"]),
+            train_metrics=TrainingMetrics(**train_metrics),
             validation_metrics=ValidationMetrics(**checkpoint["validation_metrics"]),
             best_score=checkpoint["best_score"],
             best_epoch=checkpoint["best_epoch"],

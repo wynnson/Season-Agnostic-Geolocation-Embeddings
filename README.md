@@ -90,11 +90,35 @@ uv sync --locked --no-default-groups --group nvidia
 uv run --no-sync python -c "import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name())"
 ```
 
-Submit the patch-attention training job:
+LoRA patch-attention training needs cached tokens entering the first LoRA block. Create them once after syncing the train/validation data, weights, and configuration:
+
+```bash
+sbatch scripts/extract_lora_tokens.sbatch
+```
+
+After the extraction job finishes, submit the LoRA patch-attention training job:
 
 ```bash
 sbatch scripts/train_patch_attention.sbatch
 squeue -u "$USER"
+```
+
+Train the frozen SALAD baseline from the same cached CLS and patch features:
+
+```bash
+sbatch scripts/train_salad_cached.sbatch
+```
+
+Train the frozen four-region patch-attention ablation with the current projection head:
+
+```bash
+sbatch scripts/train_frozen_regional_patch_attention.sbatch
+```
+
+Train the cached LoRA baseline without patch attention after token extraction completes:
+
+```bash
+sbatch scripts/train_lora.sbatch
 ```
 
 Follow the running job's training output and errors, replacing `<job-id>` with the ID returned by `sbatch`:
@@ -106,13 +130,24 @@ tail -f slurm-patch-attn-<job-id>.err
 
 ## Scripts
 
+Train attention pooling without a final projection head. This keeps the learnable patch-attention pooling fusion and directly L2-normalizes its 384-D output:
+
+```bash
+uv run python scripts/train_cached.py \
+  model.tuning=frozen \
+  model.patch_attention.enabled=true \
+  model.projection_head.architecture=identity \
+  training.sampled_hard_negatives_per_anchor=0 \
+  checkpoint.run_name=dinov3_vits16_patch_attention_identity
+```
+
 Create geographic split, hard-negative, and manifest artifacts:
 
 ```bash
 uv run python scripts/preprocess.py
 ```
 
-Evaluate the configured trained checkpoint on the geographic validation split:
+Evaluate the configured model on the geographic test split:
 
 ```bash
 uv run python scripts/evaluate.py

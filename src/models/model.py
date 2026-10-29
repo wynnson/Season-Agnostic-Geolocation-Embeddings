@@ -43,10 +43,16 @@ class SeasonAgnosticModel(nn.Module):
     ) -> PatchAttentionPool | None:
         if patch_attention_config is None or not patch_attention_config.enabled:
             return None
+        num_regions = (
+            patch_attention_config.get("num_regions", 1)
+            if hasattr(patch_attention_config, "get")
+            else getattr(patch_attention_config, "num_regions", 1)
+        )
         return PatchAttentionPool(
             embedding_dim=backbone_dim,
             hidden_dim=patch_attention_config.hidden_dim,
             residual_scale_initialization=patch_attention_config.residual_scale_initialization,
+            num_regions=num_regions,
         )
 
     def embed_features(

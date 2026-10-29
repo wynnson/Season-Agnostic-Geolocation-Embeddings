@@ -10,7 +10,6 @@ from src.datasets.seasonet import SeasoNetData
 from src.models.model import SeasonAgnosticModel
 from src.models.preprocessing import preprocess_images
 from src.training.evaluation import evaluate_cross_season_retrieval
-from src.training.losses.attention import symmetric_js_divergence
 from src.training.schema import TrainingHistory, TrainingMetrics, ValidationMetrics
 
 
@@ -24,7 +23,6 @@ class Trainer:
         mean: tuple[float, float, float],
         std: tuple[float, float, float],
         season_loss_weight: float,
-        attention_consistency_weight: float,
         grl_scale: float,
         contrastive_criterion: torch.nn.Module,
         retrieval_chunk_size: int,
@@ -38,7 +36,6 @@ class Trainer:
         self.mean = mean
         self.std = std
         self.season_loss_weight = season_loss_weight
-        self.attention_consistency_weight = attention_consistency_weight
         self.grl_scale = grl_scale
         self.retrieval_chunk_size = retrieval_chunk_size
         self.log_every = log_every
@@ -73,30 +70,14 @@ class Trainer:
         summer_images = self.prepare_images(batch.anchor)
         snow_images = self.prepare_images(batch.positive)
 
-        if self.attention_consistency_weight > 0:
-            summer_embeddings, summer_season_logits, summer_attention = self.model.forward_feature_training(
-                *self.model._backbone_features(summer_images),
-                grl_scale=self.grl_scale,
-                return_attention=True,
-            )
-            snow_embeddings, snow_season_logits, snow_attention = self.model.forward_feature_training(
-                *self.model._backbone_features(snow_images),
-                grl_scale=self.grl_scale,
-                return_attention=True,
-            )
-            if summer_attention is None or snow_attention is None:
-                raise ValueError("Attention consistency requires model.patch_attention.enabled")
-            attention_consistency_loss = symmetric_js_divergence(summer_attention, snow_attention)
-        else:
-            summer_embeddings, summer_season_logits = self.model.forward_training(
-                summer_images,
-                grl_scale=self.grl_scale,
-            )
-            snow_embeddings, snow_season_logits = self.model.forward_training(
-                snow_images,
-                grl_scale=self.grl_scale,
-            )
-            attention_consistency_loss = torch.zeros((), device=self.device)
+        summer_embeddings, summer_season_logits = self.model.forward_training(
+            summer_images,
+            grl_scale=self.grl_scale,
+        )
+        snow_embeddings, snow_season_logits = self.model.forward_training(
+            snow_images,
+            grl_scale=self.grl_scale,
+        )
 
         summer_hard_negative_embeddings = self.embed_hard_negatives(
             batch.summer_hard_negatives
@@ -135,7 +116,6 @@ class Trainer:
         total_loss = (
             contrastive_loss
             + self.season_loss_weight * season_loss
-            + self.attention_consistency_weight * attention_consistency_loss
         )
         total_loss.backward()
         self.optimizer.step()
@@ -144,7 +124,6 @@ class Trainer:
             total_loss=total_loss.item(),
             contrastive_loss=contrastive_loss.item(),
             season_loss=season_loss.item(),
-            attention_consistency_loss=attention_consistency_loss.item(),
             season_classifier_accuracy=season_classifier_accuracy.item(),
             summer_classifier_accuracy=summer_classifier_accuracy.item(),
             snow_classifier_accuracy=snow_classifier_accuracy.item(),
@@ -156,7 +135,6 @@ class Trainer:
         total_loss = 0.0
         contrastive_loss = 0.0
         season_loss = 0.0
-        attention_consistency_loss = 0.0
         season_classifier_accuracy = 0.0
         summer_classifier_accuracy = 0.0
         snow_classifier_accuracy = 0.0
@@ -169,7 +147,6 @@ class Trainer:
             total_loss += metrics.total_loss * batch_size
             contrastive_loss += metrics.contrastive_loss * batch_size
             season_loss += metrics.season_loss * batch_size
-            attention_consistency_loss += metrics.attention_consistency_loss * batch_size
             season_classifier_accuracy += metrics.season_classifier_accuracy * batch_size
             summer_classifier_accuracy += metrics.summer_classifier_accuracy * batch_size
             snow_classifier_accuracy += metrics.snow_classifier_accuracy * batch_size
@@ -179,7 +156,6 @@ class Trainer:
             total_loss=total_loss / total_samples,
             contrastive_loss=contrastive_loss / total_samples,
             season_loss=season_loss / total_samples,
-            attention_consistency_loss=attention_consistency_loss / total_samples,
             season_classifier_accuracy=season_classifier_accuracy / total_samples,
             summer_classifier_accuracy=summer_classifier_accuracy / total_samples,
             snow_classifier_accuracy=snow_classifier_accuracy / total_samples,

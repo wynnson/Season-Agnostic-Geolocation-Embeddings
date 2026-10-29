@@ -14,16 +14,10 @@ model:
     std: [0.229, 0.224, 0.225]
 
 evaluation:
-  mode: "frozen"  # frozen, trained, lora
-  checkpoint_path: "artifacts/weights/dinov3_vits16_pretrain_lvd1689m-08c60483.pth"
+  mode: "trained"  # frozen, trained, lora
+  checkpoint_path: "artifacts/checkpoints/dinov3_vits16_frozen_regional49_patch_attention_hard0_b256_best.pt"
   batch_size: 32
   retrieval_chunk_size: 512
-  patch_reranking:
-    enabled: false
-    top_k: 10
-    alpha: .2
-    batch_size: 16
-    candidate_batch_size: 4
 
 logging:
   log_every: 10

@@ -38,5 +38,11 @@ def build_projection_head(
             )
         case "residual":
             return ResidualProjectionHead(input_dim, hidden_dim, embedding_dim, dropout)
+        case "identity":
+            if embedding_dim != input_dim:
+                raise ValueError(
+                    "Identity projection heads require embedding_dim to match the backbone embedding dimension"
+                )
+            return nn.Identity()
         case _:
             raise ValueError(f"Unsupported projection head architecture: {architecture}")

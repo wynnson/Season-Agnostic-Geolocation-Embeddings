@@ -1,7 +1,3 @@
-"""Cache frozen DINOv3 tokens entering the first LoRA block, for scripts/train_cached_lora.py.
-
-The block comes from model.lora.target_modules. Config values can be overridden from the command line.
-"""
 from pathlib import Path
 import sys
 
